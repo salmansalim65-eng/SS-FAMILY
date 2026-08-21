@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-sand-50 text-slate-800 font-sans antialiased;
+  }
+  /* Comfortable tap targets on phones */
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* stops iOS Safari zooming on focus */
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-xl border border-sand-200 bg-white px-4 py-3 text-base
+           text-slate-800 shadow-sm outline-none transition
+           placeholder:text-slate-400
+           focus:border-palm-500 focus:ring-4 focus:ring-palm-500/15
+           disabled:cursor-not-allowed disabled:bg-slate-100;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-slate-700;
+  }
+  .card {
+    @apply rounded-2xl border border-sand-200 bg-white shadow-sm;
+  }
+}
+
+/* Printing: only the shopping list survives, laid out for a driver's pocket. */
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+  .print-break {
+    break-inside: avoid;
+  }
+}
+
+.print-only {
+  display: none;
+}
