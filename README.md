@@ -18,21 +18,40 @@ cp .env.example .env      # already points at the live SS-FAMILY Supabase projec
 npm run dev               # http://localhost:5173
 ```
 
-### Demo accounts
+### Signing in
 
-All use the password **`Family@123`**.
+People sign in with a **username and password**. No email, and there is no
+public sign-up — the head of family creates every account from inside the app.
 
-| Email | Person | Role |
+The bootstrap administrator is:
+
+| Username | Password | Role |
 | --- | --- | --- |
-| `head@ssfamily.app` | Salman Salim | Head of Family |
-| `fatima@ssfamily.app` | Fatima | Family Member |
-| `ahmed@ssfamily.app` | Ahmed | Family Member |
-| `hassan@ssfamily.app` | Hassan | Family Member |
-| `driver@ssfamily.app` | Kamal | Driver |
+| `ss` | `admin123` | Head of Family |
 
-Sign in as the head and as the driver to see how differently the app behaves.
+> Change that password on first sign-in: **Settings → Change my password**.
 
-> Change or delete these accounts before using the system for real.
+### Adding people
+
+Sign in as the head, then **Settings → User management → + Add user**. You give
+each person a full name, relation, username, password and role; they sign in
+with that username and can change their own password afterwards.
+
+Supabase Auth needs an email internally, so each account carries a synthetic
+one — `<username>@ssfamily.local`. Nobody ever sees or types it. The format
+lives in three places that must agree: `login_email()` in the database,
+`loginEmail()` in `src/context/AuthContext.tsx`, and `EMAIL_DOMAIN` in the
+`admin-users` edge function.
+
+Creating accounts, resetting someone else's password and deleting accounts all
+need the service role, so they run in the `admin-users` edge function, which
+checks the caller's JWT *and* that their profile says `role = 'head'`.
+
+Supabase's sign-up endpoint stays reachable at the API level, so the real gate
+is in the database: `handle_new_user()` only writes a profile row for accounts
+carrying the admin flag. A self-registered account therefore has no profile,
+which makes `app_role()` null and every RLS policy deny it — the account exists
+but can see and do nothing.
 
 ---
 
@@ -125,16 +144,16 @@ src/
   lib/            supabase client, types, formatting + colour coding,
                   Google Calendar / .ics, CSV export
 supabase/
-  migrations/     schema → business logic → security → hardening
-  functions/      google-calendar, send-whatsapp, reminders
-  seed.sql        demo accounts and sample data
+  migrations/     schema → logic → security → hardening → username accounts
+  functions/      admin-users, google-calendar, send-whatsapp, reminders
+  seed.sql        bootstrap the ss head-of-family account
 ```
 
 ### Database
 
 | Table | Purpose |
 | --- | --- |
-| `users` | profile mirrored from `auth.users`, carries the role |
+| `users` | profile mirrored from `auth.users`: username, relation, role |
 | `guests` | visits, with male/female counts, room, special needs, calendar event id |
 | `menu_items` | dish, status workflow, cook, homemade/outside, quantity, cost |
 | `tasks` | manual and menu-generated, priority, due date, status |
@@ -208,7 +227,7 @@ Applying the database to a different Supabase project:
 supabase link --project-ref <ref>
 supabase db push                      # runs supabase/migrations in order
 psql "$DATABASE_URL" -f supabase/seed.sql
-supabase functions deploy google-calendar send-whatsapp reminders
+supabase functions deploy admin-users google-calendar send-whatsapp reminders
 ```
 
 ---

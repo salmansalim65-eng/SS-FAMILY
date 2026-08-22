@@ -3,7 +3,20 @@ import { supabase, errorMessage } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useReload } from '../lib/hooks'
-import { Avatar, Badge, Button, Card, Field, Input, SectionHeader, Select, Spinner } from '../components/ui'
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  Input,
+  Modal,
+  SectionHeader,
+  Select,
+  Spinner,
+} from '../components/ui'
+import { RELATIONS } from '../lib/types'
 import type { AppUser, UserRole } from '../lib/types'
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -18,18 +31,63 @@ const ROLE_TONE: Record<UserRole, 'purple' | 'blue' | 'gray'> = {
   driver: 'gray',
 }
 
+const EMPTY_USER = {
+  name: '',
+  relation: '',
+  username: '',
+  password: '',
+  role: 'member' as UserRole,
+  phone: '',
+  whatsapp_number: '',
+}
+
+/** All account management runs through the head-only edge function. */
+async function adminCall(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('admin-users', { body })
+
+  if (error) {
+    // The function returns a JSON body with a readable message on 4xx.
+    let message = error.message
+    const ctx = (error as { context?: Response }).context
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const parsed = await ctx.json()
+        if (parsed?.error) message = parsed.error
+      } catch {
+        /* fall back to the generic message */
+      }
+    }
+    throw new Error(message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
 export function SettingsPage() {
-  const { profile, isHead, signOut, refreshProfile } = useAuth()
+  const { profile, isHead, signOut, refreshProfile, changePassword } = useAuth()
   const toast = useToast()
   const [tick, reload] = useReload()
 
-  const [name, setName] = useState(profile?.name ?? '')
-  const [phone, setPhone] = useState(profile?.phone ?? '')
-  const [whatsapp, setWhatsapp] = useState(profile?.whatsapp_number ?? '')
-  const [saving, setSaving] = useState(false)
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+
+  const [pw1, setPw1] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [savingPw, setSavingPw] = useState(false)
 
   const [members, setMembers] = useState<AppUser[]>([])
   const [loadingMembers, setLoadingMembers] = useState(true)
+
+  const [addOpen, setAddOpen] = useState(false)
+  const [form, setForm] = useState({ ...EMPTY_USER })
+  const [savingUser, setSavingUser] = useState(false)
+
+  const [resetting, setResetting] = useState<AppUser | null>(null)
+  const [resetPw, setResetPw] = useState('')
+  const [deleting, setDeleting] = useState<AppUser | null>(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     setName(profile?.name ?? '')
@@ -54,9 +112,10 @@ export function SettingsPage() {
     }
   }, [tick])
 
+  // ------------------------------------------------------------ my profile
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
+    setSavingProfile(true)
     const { error } = await supabase
       .from('users')
       .update({
@@ -65,7 +124,7 @@ export function SettingsPage() {
         whatsapp_number: whatsapp.trim() || null,
       })
       .eq('id', profile!.id)
-    setSaving(false)
+    setSavingProfile(false)
 
     if (error) {
       toast.error(errorMessage(error))
@@ -76,14 +135,97 @@ export function SettingsPage() {
     reload()
   }
 
-  const changeRole = async (member: AppUser, role: UserRole) => {
-    const { error } = await supabase.from('users').update({ role }).eq('id', member.id)
-    if (error) {
-      toast.error(errorMessage(error))
+  const savePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pw1.length < 6) {
+      toast.error('Password must be at least 6 characters.')
       return
     }
-    toast.success(`${member.name} is now ${ROLE_LABEL[role]}.`)
-    reload()
+    if (pw1 !== pw2) {
+      toast.error('The two passwords do not match.')
+      return
+    }
+    setSavingPw(true)
+    try {
+      await changePassword(pw1)
+      toast.success('Password changed. Use it next time you sign in.')
+      setPw1('')
+      setPw2('')
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setSavingPw(false)
+    }
+  }
+
+  // --------------------------------------------------------- user management
+  const addUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingUser(true)
+    try {
+      await adminCall({
+        action: 'create',
+        name: form.name,
+        username: form.username,
+        password: form.password,
+        relation: form.relation,
+        role: form.role,
+        phone: form.phone,
+        whatsapp_number: form.whatsapp_number,
+      })
+      toast.success(`${form.name.trim()} can now sign in as "${form.username.trim().toLowerCase()}".`)
+      setForm({ ...EMPTY_USER })
+      setAddOpen(false)
+      reload()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setSavingUser(false)
+    }
+  }
+
+  const changeRole = async (member: AppUser, role: UserRole) => {
+    try {
+      await adminCall({ action: 'update', id: member.id, role })
+      toast.success(`${member.name} is now ${ROLE_LABEL[role]}.`)
+      reload()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  }
+
+  const doReset = async () => {
+    if (!resetting) return
+    if (resetPw.length < 6) {
+      toast.error('Password must be at least 6 characters.')
+      return
+    }
+    setBusy(true)
+    try {
+      await adminCall({ action: 'set_password', id: resetting.id, password: resetPw })
+      toast.success(`New password set for ${resetting.name}.`)
+      setResetting(null)
+      setResetPw('')
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doDelete = async () => {
+    if (!deleting) return
+    setBusy(true)
+    try {
+      await adminCall({ action: 'delete', id: deleting.id })
+      toast.success(`${deleting.name}'s account was removed.`)
+      setDeleting(null)
+      reload()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (!profile) return <Spinner />
@@ -92,7 +234,7 @@ export function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-8">
       <header>
         <h1 className="text-2xl font-extrabold text-slate-800">Settings</h1>
-        <p className="text-sm text-slate-500">Your profile and, for the head of family, the team.</p>
+        <p className="text-sm text-slate-500">Your profile, your password, and the family.</p>
       </header>
 
       {/* ------------------------------------------------------ my profile */}
@@ -103,7 +245,10 @@ export function SettingsPage() {
             <Avatar name={profile.name} />
             <div className="min-w-0">
               <p className="truncate font-bold text-slate-800">{profile.name}</p>
-              <p className="truncate text-sm text-slate-500">{profile.email}</p>
+              <p className="truncate text-sm text-slate-500">
+                @{profile.username}
+                {profile.relation ? ` · ${profile.relation}` : ''}
+              </p>
             </div>
             <Badge tone={ROLE_TONE[profile.role]} className="ml-auto">
               {ROLE_LABEL[profile.role]}
@@ -125,7 +270,7 @@ export function SettingsPage() {
               </Field>
               <Field
                 label="WhatsApp number"
-                hint="With country code. Leave blank to receive in-app notifications only."
+                hint="With country code. Blank means in-app notifications only."
               >
                 <Input
                   type="tel"
@@ -136,7 +281,7 @@ export function SettingsPage() {
               </Field>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" loading={saving}>
+              <Button type="submit" loading={savingProfile}>
                 Save profile
               </Button>
               <Button type="button" variant="secondary" onClick={() => void signOut()}>
@@ -147,9 +292,63 @@ export function SettingsPage() {
         </Card>
       </section>
 
+      {/* --------------------------------------------------- change password */}
+      <section>
+        <SectionHeader icon="🔑" title="Change my password" />
+        <Card className="p-5">
+          <form onSubmit={savePassword} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="New password" required hint="At least 6 characters.">
+                <Input
+                  type="password"
+                  value={pw1}
+                  onChange={(e) => setPw1(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                />
+              </Field>
+              <Field label="Repeat new password" required>
+                <Input
+                  type="password"
+                  value={pw2}
+                  onChange={(e) => setPw2(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                />
+              </Field>
+            </div>
+            <Button type="submit" loading={savingPw}>
+              Change password
+            </Button>
+          </form>
+        </Card>
+      </section>
+
       {/* ------------------------------------------------------ the family */}
       <section>
-        <SectionHeader icon="👨‍👩‍👧‍👦" title="Family & roles" count={members.length} />
+        <SectionHeader
+          icon="👨‍👩‍👧‍👦"
+          title={isHead ? 'User management' : 'Family'}
+          count={members.length}
+          action={
+            isHead ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setForm({ ...EMPTY_USER })
+                  setAddOpen(true)
+                }}
+              >
+                + Add user
+              </Button>
+            ) : undefined
+          }
+        />
+
         {loadingMembers ? (
           <Spinner label="Loading" />
         ) : (
@@ -164,21 +363,46 @@ export function SettingsPage() {
                       <span className="ml-1.5 text-xs font-bold text-palm-700">(you)</span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-slate-500">{member.email}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {member.whatsapp_number ? `WhatsApp ${member.whatsapp_number}` : 'No WhatsApp number'}
+                  <p className="truncate text-xs text-slate-500">
+                    @{member.username}
+                    {member.relation ? ` · ${member.relation}` : ''}
                   </p>
+                  {isHead && (
+                    <p className="text-[11px] text-slate-400">
+                      {member.whatsapp_number
+                        ? `WhatsApp ${member.whatsapp_number}`
+                        : 'No WhatsApp number'}
+                    </p>
+                  )}
                 </div>
+
                 {isHead && member.id !== profile.id ? (
-                  <Select
-                    value={member.role}
-                    onChange={(e) => void changeRole(member, e.target.value as UserRole)}
-                    className="w-44"
-                  >
-                    <option value="head">Head of Family</option>
-                    <option value="member">Family Member</option>
-                    <option value="driver">Driver</option>
-                  </Select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={member.role}
+                      onChange={(e) => void changeRole(member, e.target.value as UserRole)}
+                      className="w-40"
+                    >
+                      <option value="head">Head of Family</option>
+                      <option value="member">Family Member</option>
+                      <option value="driver">Driver</option>
+                    </Select>
+                    <button
+                      onClick={() => {
+                        setResetting(member)
+                        setResetPw('')
+                      }}
+                      className="rounded-lg bg-sand-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-sand-200"
+                    >
+                      Reset password
+                    </button>
+                    <button
+                      onClick={() => setDeleting(member)}
+                      className="rounded-lg px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 ) : (
                   <Badge tone={ROLE_TONE[member.role]}>{ROLE_LABEL[member.role]}</Badge>
                 )}
@@ -186,65 +410,158 @@ export function SettingsPage() {
             ))}
           </Card>
         )}
+
         {isHead && (
           <p className="mt-2 text-xs text-slate-500">
-            New people join by creating their own account on the sign-in screen. You can change
-            anyone's role here.
+            There is no public sign-up: every account is created here by you.
           </p>
         )}
       </section>
 
-      {/* ---------------------------------------------------- integrations */}
-      <section>
-        <SectionHeader icon="🔌" title="Integrations" />
-        <Card className="divide-y divide-sand-100">
-          <IntegrationRow
-            icon="📅"
-            title="Google Calendar"
-            body="Guest arrivals are pushed to the family calendar with a reminder 3 days before. Without credentials, every guest card still offers a one-click 'Add to Calendar' link and an .ics download."
-            hint="Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN and GOOGLE_CALENDAR_ID as Supabase edge function secrets."
-          />
-          <IntegrationRow
-            icon="💬"
-            title="WhatsApp (Twilio)"
-            body="Notifications are queued for anyone with a WhatsApp number and delivered by the send-whatsapp edge function. Without credentials they stay in the in-app inbox."
-            hint="Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM as Supabase edge function secrets."
-          />
-          <IntegrationRow
-            icon="⏰"
-            title="Reminders"
-            body="A scheduled run notifies assignees 1 day before a task is due, and the family 3 days before a guest arrives."
-            hint="Schedule the reminders edge function daily with pg_cron or any external scheduler."
-          />
-        </Card>
-      </section>
-    </div>
-  )
-}
+      {/* --------------------------------------------------------- add user */}
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Add user"
+        wide
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAddOpen(false)} disabled={savingUser}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-user-form" loading={savingUser}>
+              Create account
+            </Button>
+          </>
+        }
+      >
+        <form id="add-user-form" onSubmit={addUser} className="space-y-4">
+          <Field label="Full name" required>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+              autoFocus
+              placeholder="Fatima Salim"
+            />
+          </Field>
 
-function IntegrationRow({
-  icon,
-  title,
-  body,
-  hint,
-}: {
-  icon: string
-  title: string
-  body: string
-  hint: string
-}) {
-  return (
-    <div className="flex gap-3 px-4 py-4">
-      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-sand-100 text-xl">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="font-bold text-slate-800">{title}</p>
-        <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{body}</p>
-        <p className="mt-1.5 rounded-lg bg-sand-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-500">
-          {hint}
-        </p>
-      </div>
+          <Field label="Relation" hint="How they relate to the family.">
+            <Input
+              value={form.relation}
+              onChange={(e) => setForm({ ...form, relation: e.target.value })}
+              list="relation-options"
+              placeholder="Daughter, Uncle, Driver…"
+            />
+            <datalist id="relation-options">
+              {RELATIONS.map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </Field>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Username"
+              required
+              hint="Lowercase letters, numbers, dot, dash or underscore."
+            >
+              <Input
+                value={form.username}
+                onChange={(e) =>
+                  setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s+/g, '') })
+                }
+                required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="fatima"
+              />
+            </Field>
+            <Field label="Password" required hint="At least 6 characters. Share it with them.">
+              <Input
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                required
+                minLength={6}
+                placeholder="••••••••"
+              />
+            </Field>
+          </div>
+
+          <Field label="Role" required>
+            <Select
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
+            >
+              <option value="member">Family Member — suggest menu, add shopping, own tasks</option>
+              <option value="driver">Driver — sees the shopping list only</option>
+              <option value="head">Head of Family — full control</option>
+            </Select>
+          </Field>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Phone">
+              <Input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+9665…"
+              />
+            </Field>
+            <Field label="WhatsApp number">
+              <Input
+                type="tel"
+                value={form.whatsapp_number}
+                onChange={(e) => setForm({ ...form, whatsapp_number: e.target.value })}
+                placeholder="+9665…"
+              />
+            </Field>
+          </div>
+
+          <p className="rounded-xl bg-palm-50 px-4 py-3 text-xs leading-relaxed text-palm-800">
+            They sign in with this <strong>username and password</strong> — no email needed. They
+            can change the password themselves from Settings afterwards.
+          </p>
+        </form>
+      </Modal>
+
+      {/* --------------------------------------------------- reset password */}
+      <Modal
+        open={resetting !== null}
+        onClose={() => setResetting(null)}
+        title={`Reset password for ${resetting?.name ?? ''}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setResetting(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={() => void doReset()} loading={busy}>
+              Set password
+            </Button>
+          </>
+        }
+      >
+        <Field label="New password" required hint="At least 6 characters. Tell them the new one.">
+          <Input
+            value={resetPw}
+            onChange={(e) => setResetPw(e.target.value)}
+            minLength={6}
+            placeholder="••••••••"
+          />
+        </Field>
+      </Modal>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete account"
+        message={`Remove ${deleting?.name}'s account (@${deleting?.username})? They will no longer be able to sign in. Anything they created stays, but is no longer credited to them.`}
+        confirmLabel="Delete account"
+        destructive
+        busy={busy}
+        onCancel={() => setDeleting(null)}
+        onConfirm={doDelete}
+      />
     </div>
   )
 }

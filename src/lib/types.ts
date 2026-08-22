@@ -9,6 +9,9 @@ export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snacks' | 'dessert'
 export interface AppUser {
   id: string
   name: string
+  /** Login identity. The email is synthetic and never shown. */
+  username: string
+  relation: string | null
   email: string
   phone: string | null
   whatsapp_number: string | null
@@ -16,6 +19,25 @@ export interface AppUser {
   is_active: boolean
   created_at: string
 }
+
+/** Suggestions only — the field accepts any text. */
+export const RELATIONS = [
+  'Head of Family',
+  'Wife',
+  'Husband',
+  'Son',
+  'Daughter',
+  'Father',
+  'Mother',
+  'Brother',
+  'Sister',
+  'Uncle',
+  'Aunt',
+  'Cousin',
+  'Driver',
+  'Cook',
+  'Helper',
+] as const
 
 export interface Guest {
   id: string

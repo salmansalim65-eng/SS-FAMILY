@@ -2,7 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import type { AppUser, UserRole } from '../lib/types'
+import type { AppUser } from '../lib/types'
+
+/**
+ * People sign in with a username. Supabase Auth needs an email, so each
+ * account carries a synthetic one derived from the username — it is never
+ * shown or typed. Keep this in step with login_email() in the database and
+ * EMAIL_DOMAIN in the admin-users edge function.
+ */
+export const LOGIN_EMAIL_DOMAIN = 'ssfamily.local'
+
+export function loginEmail(username: string): string {
+  const clean = username.trim().toLowerCase()
+  // Tolerate someone typing the full address out of habit.
+  return clean.includes('@') ? clean : `${clean}@${LOGIN_EMAIL_DOMAIN}`
+}
 
 interface AuthValue {
   session: Session | null
@@ -11,19 +25,10 @@ interface AuthValue {
   isHead: boolean
   isFamily: boolean
   isDriver: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (input: SignUpInput) => Promise<{ needsConfirmation: boolean }>
+  signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  changePassword: (newPassword: string) => Promise<void>
   refreshProfile: () => Promise<void>
-}
-
-export interface SignUpInput {
-  email: string
-  password: string
-  name: string
-  role: UserRole
-  phone?: string
-  whatsapp_number?: string
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
@@ -34,11 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle()
+    const { data, error } = await supabase.from('users').select('*').eq('id', userId).maybeSingle()
 
     if (error) {
       console.error('Could not load profile', error)
@@ -77,35 +78,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loadProfile])
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (username: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email: loginEmail(username),
       password,
     })
-    if (error) throw error
-  }, [])
-
-  const signUp = useCallback(async (input: SignUpInput) => {
-    const { data, error } = await supabase.auth.signUp({
-      email: input.email.trim().toLowerCase(),
-      password: input.password,
-      options: {
-        data: {
-          name: input.name.trim(),
-          role: input.role,
-          phone: input.phone?.trim() || null,
-          whatsapp_number: input.whatsapp_number?.trim() || null,
-        },
-      },
-    })
-    if (error) throw error
-    return { needsConfirmation: !data.session }
+    if (error) {
+      // Don't leak whether the username exists.
+      throw new Error('Wrong username or password.')
+    }
   }, [])
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setProfile(null)
     setSession(null)
+  }, [])
+
+  const changePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) throw error
   }, [])
 
   const refreshProfile = useCallback(async () => {
@@ -121,11 +113,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isFamily: profile?.role === 'head' || profile?.role === 'member',
       isDriver: profile?.role === 'driver',
       signIn,
-      signUp,
       signOut,
+      changePassword,
       refreshProfile,
     }),
-    [session, profile, loading, signIn, signUp, signOut, refreshProfile],
+    [session, profile, loading, signIn, signOut, changePassword, refreshProfile],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
