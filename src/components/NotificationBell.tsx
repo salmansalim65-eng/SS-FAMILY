@@ -18,6 +18,9 @@ const ICONS: Record<NotificationType, string> = {
   shopping_purchased: '🧾',
 }
 
+/** Makes every realtime channel topic unique for the lifetime of the tab. */
+let channelSeq = 0
+
 /** A short two-tone chime, synthesised so there is no asset to ship. */
 function playChime() {
   try {
@@ -58,8 +61,13 @@ export function NotificationBell() {
 
   const unread = items.filter((n) => !n.read_at).length
 
+  // Depend on the user's id, not the profile object: AuthContext loads the
+  // profile twice (once from getSession, once from onAuthStateChange), so the
+  // object identity changes even though the user has not.
+  const userId = profile?.id
+
   const load = useCallback(async () => {
-    if (!profile) return
+    if (!userId) return
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -76,29 +84,41 @@ export function NotificationBell() {
     knownIds.current = new Set(rows.map((n) => n.id))
     primed.current = true
     setItems(rows)
-  }, [profile])
+  }, [userId])
 
   useEffect(() => {
     void load()
-    if (!profile) return
+    if (!userId) return
 
-    const channel = supabase
-      .channel(`notifications:${profile.id}`)
-      .on(
+    // A fresh topic each time. Re-using a topic can hand back a channel that
+    // is already subscribed, and calling .on() on one of those throws — which,
+    // from inside an effect, tears down the whole React root.
+    channelSeq += 1
+    const topic = `notifications-${userId}-${channelSeq}`
+
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    try {
+      channel = supabase.channel(topic)
+      channel.on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` },
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         () => void load(),
       )
-      .subscribe()
+      channel.subscribe()
+    } catch (error) {
+      // Realtime is a convenience, never a hard dependency.
+      console.warn('Realtime notifications unavailable:', error)
+      channel = null
+    }
 
     // Realtime can be disabled or blocked by a proxy; poll as a safety net.
     const timer = window.setInterval(() => void load(), 60_000)
 
     return () => {
-      void supabase.removeChannel(channel)
+      if (channel) void supabase.removeChannel(channel)
       window.clearInterval(timer)
     }
-  }, [profile, load])
+  }, [userId, load])
 
   useEffect(() => {
     if (!open) return
