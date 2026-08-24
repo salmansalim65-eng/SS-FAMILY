@@ -29,6 +29,7 @@ interface Body {
   role?: Role
   phone?: string
   whatsapp_number?: string
+  can_approve_menu?: boolean
 }
 
 const loginEmail = (username: string) => `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`
@@ -131,6 +132,7 @@ Deno.serve(async (req: Request) => {
         relation: body.relation?.trim() || null,
         phone: body.phone?.trim() || null,
         whatsapp_number: body.whatsapp_number?.trim() || null,
+        can_approve_menu: body.can_approve_menu ?? false,
       })
       .eq('id', created.user.id)
 
@@ -142,12 +144,17 @@ Deno.serve(async (req: Request) => {
     if (!body.id) return json({ error: 'Missing user id.' }, 400)
 
     const patch: Record<string, unknown> = {}
-    if (body.name !== undefined) patch.name = body.name.trim()
+    if (body.name !== undefined) {
+      const name = body.name.trim()
+      if (!name) return json({ error: 'Full name cannot be empty.' }, 400)
+      patch.name = name
+    }
     if (body.relation !== undefined) patch.relation = body.relation.trim() || null
     if (body.phone !== undefined) patch.phone = body.phone.trim() || null
     if (body.whatsapp_number !== undefined) {
       patch.whatsapp_number = body.whatsapp_number.trim() || null
     }
+    if (body.can_approve_menu !== undefined) patch.can_approve_menu = body.can_approve_menu
     if (body.role !== undefined) {
       if (body.id === caller.id && body.role !== 'head') {
         return json({ error: 'You cannot remove your own head-of-family role.' }, 400)
@@ -155,11 +162,53 @@ Deno.serve(async (req: Request) => {
       patch.role = body.role
     }
 
+    // Changing a username moves the login itself, because the sign-in address
+    // is derived from it. Do that first: if it fails, the profile is untouched
+    // and the person can still sign in with the name they had.
+    if (body.username !== undefined) {
+      const username = body.username.trim().toLowerCase()
+      const { data: current } = await admin
+        .from('users')
+        .select('username')
+        .eq('id', body.id)
+        .maybeSingle()
+
+      if (username !== (current?.username ?? '')) {
+        if (!USERNAME_RE.test(username)) {
+          return json(
+            {
+              error:
+                'Username must be 2-30 characters: lowercase letters, numbers, dot, dash or underscore.',
+            },
+            400,
+          )
+        }
+
+        const { data: taken } = await admin
+          .from('users')
+          .select('id')
+          .ilike('username', username)
+          .neq('id', body.id)
+          .maybeSingle()
+        if (taken) return json({ error: `Username "${username}" is already taken.` }, 409)
+
+        const { error: authError } = await admin.auth.admin.updateUserById(body.id, {
+          email: loginEmail(username),
+          email_confirm: true,
+          user_metadata: { username },
+        })
+        if (authError) return json({ error: authError.message }, 400)
+
+        patch.username = username
+        patch.email = loginEmail(username)
+      }
+    }
+
     if (Object.keys(patch).length === 0) return json({ ok: true })
 
     const { error } = await admin.from('users').update(patch).eq('id', body.id)
     if (error) return json({ error: error.message }, 400)
-    return json({ ok: true })
+    return json({ ok: true, username: patch.username })
   }
 
   // -------------------------------------------------- set_password (reset)

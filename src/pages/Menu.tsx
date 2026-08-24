@@ -47,6 +47,7 @@ const EMPTY = {
   cook_person: '',
   homemade_or_outside: 'homemade' as PrepType,
   outside_responsible: '',
+  vendor: '',
   quantity: '1',
   unit: 'serving',
   cost: '0',
@@ -54,7 +55,7 @@ const EMPTY = {
 }
 
 export function MenuPage() {
-  const { profile, isHead } = useAuth()
+  const { profile, canApproveMenu } = useAuth()
   const toast = useToast()
   const { cooks } = useUsers()
   const [tick, reload] = useReload()
@@ -101,11 +102,18 @@ export function MenuPage() {
     return items.filter((item) => {
       if (tab !== 'all' && item.status !== tab) return false
       if (!term) return true
-      return [item.dish_name, item.notes, item.suggester?.name, item.cook?.name]
+      return [item.dish_name, item.notes, item.vendor, item.suggester?.name, item.cook?.name]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(term))
     })
   }, [items, tab, search])
+
+  /** Restaurants already used, so the next order is one tap not one typing. */
+  const knownVendors = useMemo(
+    () =>
+      [...new Set(items.map((i) => i.vendor).filter((v): v is string => Boolean(v?.trim())))].sort(),
+    [items],
+  )
 
   const counts = useMemo(() => {
     const map: Record<string, number> = { all: items.length }
@@ -136,6 +144,7 @@ export function MenuPage() {
       cook_person: item.cook_person ?? '',
       homemade_or_outside: item.homemade_or_outside,
       outside_responsible: item.outside_responsible ?? '',
+      vendor: item.vendor ?? '',
       quantity: String(item.quantity),
       unit: item.unit ?? 'serving',
       cost: String(item.cost),
@@ -157,6 +166,7 @@ export function MenuPage() {
       cook_person: outside ? null : form.cook_person || null,
       homemade_or_outside: form.homemade_or_outside,
       outside_responsible: outside ? form.outside_responsible || null : null,
+      vendor: outside ? form.vendor.trim() || null : null,
       quantity: Number(form.quantity) || 1,
       unit: form.unit,
       cost: Number(form.cost) || 0,
@@ -266,7 +276,7 @@ export function MenuPage() {
         </div>
       </header>
 
-      {isHead && (counts.draft ?? 0) > 0 && (
+      {canApproveMenu && (counts.draft ?? 0) > 0 && (
         <div className="mb-5 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
           <span className="text-2xl" aria-hidden>
             ⏳
@@ -324,7 +334,7 @@ export function MenuPage() {
             <MenuCard
               key={item.id}
               item={item}
-              isHead={isHead}
+              canApprove={canApproveMenu}
               isMine={item.suggested_by === profile?.id}
               onApprove={() => void approve(item)}
               onReject={() => {
@@ -454,6 +464,27 @@ export function MenuPage() {
             </Field>
           )}
 
+          {form.homemade_or_outside === 'outside' && (
+            <Field
+              label="Which restaurant or shop?"
+              required
+              hint="Whoever picks it up needs to know where to go."
+            >
+              <Input
+                value={form.vendor}
+                onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+                required
+                list="vendor-options"
+                placeholder="Al Baik, Albaik Corniche, Kudu…"
+              />
+              <datalist id="vendor-options">
+                {knownVendors.map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+            </Field>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <Field label="Quantity">
               <Input
@@ -494,10 +525,19 @@ export function MenuPage() {
             />
           </Field>
 
-          {!editing && !isHead && (
+          {!editing && (
             <p className="rounded-xl bg-sand-100 px-4 py-3 text-xs text-slate-600">
-              Your suggestion is saved as a <strong>DRAFT</strong> and is visible to everyone. Only
-              the head of family can approve it.
+              {canApproveMenu ? (
+                <>
+                  This goes <strong>straight on the menu</strong> — no approval needed — and its
+                  cooking or pickup task is created immediately.
+                </>
+              ) : (
+                <>
+                  Your suggestion is saved as a <strong>DRAFT</strong> and is visible to everyone.
+                  It needs approval before it becomes a task.
+                </>
+              )}
             </p>
           )}
         </form>
@@ -547,7 +587,7 @@ export function MenuPage() {
 
 function MenuCard({
   item,
-  isHead,
+  canApprove,
   isMine,
   onApprove,
   onReject,
@@ -556,7 +596,7 @@ function MenuCard({
   onBackToDraft,
 }: {
   item: MenuItem
-  isHead: boolean
+  canApprove: boolean
   isMine: boolean
   onApprove: () => void
   onReject: () => void
@@ -575,7 +615,7 @@ function MenuCard({
   }[tone]
 
   const responsible = item.homemade_or_outside === 'outside' ? item.outsider : item.cook
-  const canEdit = isHead || (isMine && item.status === 'draft')
+  const canEdit = canApprove || (isMine && item.status === 'draft')
 
   return (
     <Card accent={accent} className="flex flex-col p-5 pl-6">
@@ -592,7 +632,11 @@ function MenuCard({
 
       <div className="mb-3 flex flex-wrap gap-1.5">
         <Badge tone={item.homemade_or_outside === 'homemade' ? 'green' : 'blue'}>
-          {item.homemade_or_outside === 'homemade' ? '🏠 Homemade' : '🛍️ Buy outside'}
+          {item.homemade_or_outside === 'homemade'
+            ? '🏠 Homemade'
+            : item.vendor
+              ? `🛍️ ${item.vendor}`
+              : '🛍️ Buy outside'}
         </Badge>
         <Badge tone="gray">
           {qty(item.quantity)} {item.unit}
@@ -653,7 +697,7 @@ function MenuCard({
       )}
 
       <div className="mt-auto flex flex-wrap gap-2 border-t border-sand-100 pt-3">
-        {isHead && item.status === 'draft' && (
+        {canApprove && item.status === 'draft' && (
           <>
             <Button size="sm" variant="success" onClick={onApprove}>
               ✓ Approve
@@ -663,7 +707,7 @@ function MenuCard({
             </Button>
           </>
         )}
-        {isHead && item.status === 'rejected' && (
+        {canApprove && item.status === 'rejected' && (
           <Button size="sm" variant="secondary" onClick={onBackToDraft}>
             ↩ Reconsider
           </Button>

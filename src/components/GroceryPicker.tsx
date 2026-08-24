@@ -31,9 +31,9 @@ const CATEGORY_ICON: Record<string, string> = {
 /**
  * The family-facing grocery list: tick what you need, set how much.
  *
- * A tick writes an ordinary shopping_list row owned by you, so it merges into
- * the driver's consolidated list exactly like a typed-in item — two people
- * ticking Chicken still produces one line with the totals added up.
+ * A tick drops the item into *your basket* — a shopping_list row with no
+ * submitted_at, which nobody else can see. It only reaches the driver when you
+ * review the basket and send it, the same way an online order works.
  */
 export function GroceryPicker({ onChanged }: { onChanged: () => void }) {
   const { profile } = useAuth()
@@ -60,7 +60,7 @@ export function GroceryPicker({ onChanged }: { onChanged: () => void }) {
         .from('shopping_list')
         .select('id, catalogue_id, quantity, unit')
         .eq('added_by', profile.id)
-        .eq('status', 'pending')
+        .is('submitted_at', null)
         .not('catalogue_id', 'is', null),
     ])
 
@@ -110,6 +110,7 @@ export function GroceryPicker({ onChanged }: { onChanged: () => void }) {
         quantity: item.default_qty,
         unit: item.default_unit,
         category: item.category,
+        store: item.default_store,
         catalogue_id: item.id,
         added_by: profile?.id,
       })
@@ -219,8 +220,9 @@ export function GroceryPicker({ onChanged }: { onChanged: () => void }) {
             🛒
           </span>
           <p className="flex-1 text-sm text-palm-900">
-            You have ticked <strong>{pickedCount}</strong> item{pickedCount === 1 ? '' : 's'}. They
-            are already on the driver's list.
+            <strong>{pickedCount}</strong> item{pickedCount === 1 ? '' : 's'} in your basket.
+            Nobody else can see it yet — open <strong>My basket</strong> to set the shops and
+            send it to the driver.
           </p>
         </div>
       )}

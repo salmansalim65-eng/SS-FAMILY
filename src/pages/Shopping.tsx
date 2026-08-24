@@ -21,7 +21,9 @@ import {
   Textarea,
 } from '../components/ui'
 import { GroceryPicker } from '../components/GroceryPicker'
-import { SHOPPING_CATEGORIES, UNITS } from '../lib/types'
+import { BasketPanel } from '../components/BasketPanel'
+import { DriverList } from '../components/DriverList'
+import { SHOPPING_CATEGORIES, STORES, UNITS } from '../lib/types'
 import { ShareButton } from '../components/ShareButton'
 import { shoppingMessage } from '../lib/whatsapp'
 import type { ConsolidatedItem, Guest, Priority, ShoppingItem } from '../lib/types'
@@ -36,13 +38,14 @@ interface SimilarItem {
   score: number
 }
 
-type View = 'grocery' | 'list' | 'detail'
+type View = 'grocery' | 'basket' | 'list' | 'detail'
 
 const EMPTY = {
   item_name: '',
   quantity: '1',
   unit: 'kg',
   category: 'Vegetables',
+  store: '',
   priority: 'medium' as Priority,
   notes: '',
   guest_id: '',
@@ -54,8 +57,10 @@ export function ShoppingPage() {
   const [tick, reload] = useReload()
 
   // Family land on the tick list — that is the everyday action. The driver
-  // only ever gets the consolidated list.
+  // only ever gets their own grouped list.
   const [view, setView] = useState<View>(isDriver ? 'list' : 'grocery')
+  /** How many things are sitting in my basket, unsent. */
+  const [basketCount, setBasketCount] = useState(0)
   const [consolidated, setConsolidated] = useState<ConsolidatedItem[]>([])
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
@@ -90,6 +95,14 @@ export function ShoppingPage() {
       setConsolidated((conRes.data ?? []) as unknown as ConsolidatedItem[])
 
       if (isFamily) {
+        const { count } = await supabase
+          .from('shopping_list')
+          .select('id', { count: 'exact', head: true })
+          .eq('added_by', profile?.id ?? '')
+          .is('submitted_at', null)
+        if (!active) return
+        setBasketCount(count ?? 0)
+
         const [itemRes, guestRes] = await Promise.all([
           supabase
             .from('shopping_list')
@@ -111,7 +124,7 @@ export function ShoppingPage() {
       active = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, isFamily])
+  }, [tick, isFamily, profile?.id])
 
   // ----------------------------------------------------- duplicate detection
   const checkDuplicates = useCallback(async (name: string) => {
@@ -151,9 +164,11 @@ export function ShoppingPage() {
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase()
     return items.filter((item) => {
+      // The basket has its own tab; this list is what has actually gone out.
+      if (!item.submitted_at) return false
       if (hidePurchased && item.status !== 'pending') return false
       if (!term) return true
-      return [item.item_name, item.category, item.adder?.name, item.notes]
+      return [item.item_name, item.category, item.store, item.adder?.name, item.notes]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(term))
     })
@@ -179,6 +194,7 @@ export function ShoppingPage() {
       quantity: Number(form.quantity) || 1,
       unit: form.unit,
       category: form.category,
+      store: form.store.trim() || null,
       priority: form.priority,
       notes: form.notes.trim() || null,
       guest_id: form.guest_id || null,
@@ -196,11 +212,11 @@ export function ShoppingPage() {
     )
     toast.success(
       merged
-        ? `Added. Consolidated with ${merged.added_by_name ?? 'another'} entry into one line for the driver.`
-        : 'Added to the shopping list.',
+        ? `Added to your basket. It will merge with ${merged.added_by_name ?? 'another'} entry when you send it.`
+        : 'Added to your basket. Send it when you are ready.',
     )
 
-    setForm({ ...EMPTY, category: form.category, unit: form.unit })
+    setForm({ ...EMPTY, category: form.category, unit: form.unit, store: form.store })
     setSimilar([])
     setFormOpen(false)
     reload()
@@ -249,13 +265,14 @@ export function ShoppingPage() {
   const exportCsv = () => {
     downloadCsv(
       `shopping-list-${todayISO()}.csv`,
-      ['Category', 'Item', 'Quantity', 'Unit', 'Status', 'Priority', 'Requested by'],
+      ['Category', 'Item', 'Quantity', 'Unit', 'Shop', 'Status', 'Priority', 'Requested by'],
       visibleGroups.flatMap(([category, rows]) =>
         rows.map((r) => [
           category,
           r.item_name,
           qty(r.total_quantity),
           r.unit,
+          r.store,
           r.status,
           r.priority,
           (r.contributors ?? []).join(', '),
@@ -321,12 +338,14 @@ export function ShoppingPage() {
             🚗
           </span>
           <p className="text-sm text-sky-900">
-            This is the consolidated list — every family member's requests merged into one line per
-            item. Tick items off as you buy them.
+            Three ways to read the same list: <strong>by shop</strong> for the trip,{' '}
+            <strong>merged totals</strong> for the counter, and <strong>by person</strong> so you
+            know whose bag each thing goes in. Tick items off as you buy them.
           </p>
         </div>
       )}
 
+      {!isDriver && (
       <div className="no-print mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchBar value={search} onChange={setSearch} placeholder="Search items…" />
         <label className="flex items-center gap-2.5 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-600 ring-1 ring-inset ring-sand-200">
@@ -339,22 +358,24 @@ export function ShoppingPage() {
           Hide purchased
         </label>
       </div>
+      )}
 
       {isFamily && (
         <div className="no-print mb-5 flex rounded-xl bg-sand-100 p-1">
           {(
             [
               ['grocery', '🥕 Grocery'],
-              ['list', "🚗 Driver's list"],
-              ['detail', '👥 Who added what'],
+              ['basket', `🧺 My basket${basketCount > 0 ? ` (${basketCount})` : ''}`],
+              ['list', isHead ? "🚗 Driver's list" : '📤 Sent'],
+              ['detail', isHead ? '👥 Every entry' : '📋 My items'],
             ] as [View, string][]
           ).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setView(key)}
-              className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition ${
+              className={`flex-1 rounded-lg px-2 py-2.5 text-xs font-bold transition sm:text-sm ${
                 view === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
-              }`}
+              } ${key === 'basket' && basketCount > 0 ? 'text-palm-700' : ''}`}
             >
               {label}
             </button>
@@ -366,6 +387,16 @@ export function ShoppingPage() {
         <Spinner label="Loading list" />
       ) : view === 'grocery' ? (
         <GroceryPicker onChanged={reload} />
+      ) : view === 'basket' ? (
+        <BasketPanel
+          onSent={() => {
+            setView('list')
+            reload()
+          }}
+          onBrowse={() => setView('grocery')}
+        />
+      ) : view === 'list' && isDriver ? (
+        <DriverList canPurchase />
       ) : view === 'list' ? (
         visibleGroups.length === 0 ? (
           <EmptyState
@@ -537,18 +568,34 @@ export function ShoppingPage() {
             </Field>
           </div>
 
-          <Field label="Category">
-            <Select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-            >
-              {SHOPPING_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Category">
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                {SHOPPING_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Which shop?" hint="Leave blank and the driver decides.">
+              <Input
+                value={form.store}
+                onChange={(e) => setForm({ ...form, store: e.target.value })}
+                list="store-options"
+                placeholder="Bindawood, Panda…"
+              />
+              <datalist id="store-options">
+                {STORES.map((st) => (
+                  <option key={st} value={st} />
+                ))}
+              </datalist>
+            </Field>
+          </div>
 
           <Field label="Priority">
             <div className="grid grid-cols-3 gap-2">
@@ -671,6 +718,7 @@ function ConsolidatedRow({
       </span>
 
       <span className="no-print flex flex-none items-center gap-2">
+        <Badge tone={row.store === 'Any shop' ? 'gray' : 'blue'}>🏪 {row.store}</Badge>
         {row.priority === 'high' && pending && <Badge tone="red">Urgent</Badge>}
         <Badge tone={shopTone(row.status)}>{titleCase(row.status)}</Badge>
         {canVerify && row.status === 'purchased' && (

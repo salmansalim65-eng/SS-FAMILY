@@ -25,6 +25,8 @@ interface AuthValue {
   isHead: boolean
   isFamily: boolean
   isDriver: boolean
+  /** May approve menu items — the head, plus anyone they have trusted with it. */
+  canApproveMenu: boolean
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   changePassword: (newPassword: string) => Promise<void>
@@ -112,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isHead: profile?.role === 'head',
       isFamily: profile?.role === 'head' || profile?.role === 'member',
       isDriver: profile?.role === 'driver',
+      canApproveMenu: profile?.role === 'head' || Boolean(profile?.can_approve_menu),
       signIn,
       signOut,
       changePassword,

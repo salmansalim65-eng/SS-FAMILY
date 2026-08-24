@@ -40,6 +40,7 @@ const EMPTY_USER = {
   role: 'member' as UserRole,
   phone: '',
   whatsapp_number: '',
+  can_approve_menu: false,
 }
 
 /** All account management runs through the head-only edge function. */
@@ -82,6 +83,8 @@ export function SettingsPage() {
   const [loadingMembers, setLoadingMembers] = useState(true)
 
   const [addOpen, setAddOpen] = useState(false)
+  const [editing, setEditing] = useState<AppUser | null>(null)
+  const [editForm, setEditForm] = useState({ ...EMPTY_USER })
   const [form, setForm] = useState({ ...EMPTY_USER })
   const [savingUser, setSavingUser] = useState(false)
 
@@ -173,6 +176,7 @@ export function SettingsPage() {
         role: form.role,
         phone: form.phone,
         whatsapp_number: form.whatsapp_number,
+        can_approve_menu: form.can_approve_menu,
       })
       toast.success(`${form.name.trim()} can now sign in as "${form.username.trim().toLowerCase()}".`)
       setForm({ ...EMPTY_USER })
@@ -185,13 +189,61 @@ export function SettingsPage() {
     }
   }
 
-  const changeRole = async (member: AppUser, role: UserRole) => {
+  const openEdit = (member: AppUser) => {
+    setEditForm({
+      name: member.name,
+      relation: member.relation ?? '',
+      username: member.username ?? '',
+      password: '',
+      role: member.role,
+      phone: member.phone ?? '',
+      whatsapp_number: member.whatsapp_number ?? '',
+      can_approve_menu: member.can_approve_menu ?? false,
+    })
+    setEditing(member)
+  }
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editing) return
+    setSavingUser(true)
     try {
-      await adminCall({ action: 'update', id: member.id, role })
-      toast.success(`${member.name} is now ${ROLE_LABEL[role]}.`)
+      // Send only what changed, so an untouched username never goes through
+      // the auth-email rename path.
+      const patch: Record<string, unknown> = { action: 'update', id: editing.id }
+      if (editForm.name.trim() !== editing.name) patch.name = editForm.name
+      if (editForm.relation.trim() !== (editing.relation ?? '')) patch.relation = editForm.relation
+      if (editForm.phone.trim() !== (editing.phone ?? '')) patch.phone = editForm.phone
+      if (editForm.whatsapp_number.trim() !== (editing.whatsapp_number ?? '')) {
+        patch.whatsapp_number = editForm.whatsapp_number
+      }
+      if (editForm.username.trim().toLowerCase() !== (editing.username ?? '')) {
+        patch.username = editForm.username
+      }
+      if (editForm.role !== editing.role) patch.role = editForm.role
+      if (editForm.can_approve_menu !== (editing.can_approve_menu ?? false)) {
+        patch.can_approve_menu = editForm.can_approve_menu
+      }
+
+      if (Object.keys(patch).length === 2) {
+        toast.toast('Nothing to save — no changes were made.')
+        setEditing(null)
+        return
+      }
+
+      await adminCall(patch)
+      toast.success(
+        patch.username
+          ? `${editForm.name.trim()} now signs in as "${editForm.username.trim().toLowerCase()}".`
+          : `${editForm.name.trim()} was updated.`,
+      )
+      setEditing(null)
+      if (editing.id === profile?.id) await refreshProfile()
       reload()
     } catch (error) {
       toast.error(errorMessage(error))
+    } finally {
+      setSavingUser(false)
     }
   }
 
@@ -383,35 +435,39 @@ export function SettingsPage() {
                   )}
                 </div>
 
-                {isHead && member.id !== profile.id ? (
+                <Badge tone={ROLE_TONE[member.role]}>{ROLE_LABEL[member.role]}</Badge>
+                {member.can_approve_menu && member.role !== 'head' && (
+                  <Badge tone="green">Approves menus</Badge>
+                )}
+
+                {isHead && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      value={member.role}
-                      onChange={(e) => void changeRole(member, e.target.value as UserRole)}
-                      className="w-40"
-                    >
-                      <option value="head">Head of Family</option>
-                      <option value="member">Family Member</option>
-                      <option value="driver">Driver</option>
-                    </Select>
                     <button
-                      onClick={() => {
-                        setResetting(member)
-                        setResetPw('')
-                      }}
+                      onClick={() => openEdit(member)}
                       className="rounded-lg bg-sand-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-sand-200"
                     >
-                      Reset password
+                      ✏ Edit
                     </button>
-                    <button
-                      onClick={() => setDeleting(member)}
-                      className="rounded-lg px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
+                    {member.id !== profile.id && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setResetting(member)
+                            setResetPw('')
+                          }}
+                          className="rounded-lg bg-sand-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-sand-200"
+                        >
+                          Reset password
+                        </button>
+                        <button
+                          onClick={() => setDeleting(member)}
+                          className="rounded-lg px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <Badge tone={ROLE_TONE[member.role]}>{ROLE_LABEL[member.role]}</Badge>
                 )}
               </div>
             ))}
@@ -424,6 +480,124 @@ export function SettingsPage() {
           </p>
         )}
       </section>
+
+      {/* -------------------------------------------------------- edit user */}
+      <Modal
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={`Edit ${editing?.name ?? ''}`}
+        wide
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)} disabled={savingUser}>
+              Cancel
+            </Button>
+            <Button type="submit" form="edit-user-form" loading={savingUser}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        <form id="edit-user-form" onSubmit={saveEdit} className="space-y-4">
+          <Field label="Full name" required>
+            <Input
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              required
+              autoFocus
+            />
+          </Field>
+
+          <Field label="Relation" hint="How they relate to the family.">
+            <Input
+              value={editForm.relation}
+              onChange={(e) => setEditForm({ ...editForm, relation: e.target.value })}
+              list="relation-options"
+              placeholder="Daughter, Uncle, Driver…"
+            />
+          </Field>
+
+          <Field
+            label="Username"
+            required
+            hint="This is what they type to sign in. Changing it changes their login."
+          >
+            <Input
+              value={editForm.username}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  username: e.target.value.toLowerCase().replace(/\s+/g, ''),
+                })
+              }
+              required
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </Field>
+
+          <Field label="Role" required>
+            <Select
+              value={editForm.role}
+              onChange={(e) => setEditForm({ ...editForm, role: e.target.value as UserRole })}
+              disabled={editing?.id === profile.id}
+            >
+              <option value="member">Family Member — suggest menu, add shopping, own tasks</option>
+              <option value="driver">Driver — sees the shopping list only</option>
+              <option value="head">Head of Family — full control</option>
+            </Select>
+            {editing?.id === profile.id && (
+              <p className="mt-1 text-xs text-slate-500">
+                You cannot change your own role — promote someone else first.
+              </p>
+            )}
+          </Field>
+
+          {editForm.role !== 'head' && editForm.role !== 'driver' && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={editForm.can_approve_menu}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, can_approve_menu: e.target.checked })
+                }
+                className="mt-0.5 h-4 w-4 accent-palm-600"
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">Can approve menus</span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                  A dish they suggest goes straight on the menu, and they can approve
+                  everyone else's too. The head of family always can.
+                </span>
+              </span>
+            </label>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Phone">
+              <Input
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                placeholder="+9665…"
+              />
+            </Field>
+            <Field label="WhatsApp number" hint="Used for the share links.">
+              <Input
+                type="tel"
+                value={editForm.whatsapp_number}
+                onChange={(e) => setEditForm({ ...editForm, whatsapp_number: e.target.value })}
+                placeholder="+9665…"
+              />
+            </Field>
+          </div>
+
+          <p className="rounded-xl bg-sand-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
+            To change their password, close this and use <strong>Reset password</strong>.
+          </p>
+        </form>
+      </Modal>
 
       {/* --------------------------------------------------------- add user */}
       <Modal
@@ -506,6 +680,23 @@ export function SettingsPage() {
               <option value="head">Head of Family — full control</option>
             </Select>
           </Field>
+
+          {form.role === 'member' && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={form.can_approve_menu}
+                onChange={(e) => setForm({ ...form, can_approve_menu: e.target.checked })}
+                className="mt-0.5 h-4 w-4 accent-palm-600"
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">Can approve menus</span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                  Their dishes need no approval, and they can approve everyone else's.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Phone">

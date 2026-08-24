@@ -37,6 +37,12 @@ Sign in as the head, then **Settings → User management → + Add user**. You g
 each person a full name, relation, username, password and role; they sign in
 with that username and can change their own password afterwards.
 
+**Edit** on any row reopens all of that — name, relation, username, phone,
+WhatsApp number, role, and whether they can approve menus. Changing a username
+moves the login with it, because the sign-in address is derived from the
+username; that is done first, so a clash or a rejected name leaves the account
+exactly as it was and the person can still sign in with their old one.
+
 Supabase Auth needs an email internally, so each account carries a synthetic
 one — `<username>@ssfamily.local`. Nobody ever sees or types it. The format
 lives in three places that must agree: `login_email()` in the database,
@@ -60,13 +66,15 @@ but can see and do nothing.
 | | Head of Family | Family Member | Driver |
 | --- | :---: | :---: | :---: |
 | Dashboard, guests, menu, tasks | ✅ full | ✅ view + suggest | ❌ |
-| Approve / reject menu items | ✅ | ❌ | ❌ |
+| Approve / reject menu items | ✅ | only if ticked | ❌ |
+| Their own dish needs approval | no | yes, unless ticked | — |
 | Create & assign tasks | ✅ | ❌ | ❌ |
 | Update status of own task | ✅ | ✅ | ❌ |
 | Add shopping items | ✅ | ✅ | ❌ |
-| See consolidated shopping list | ✅ | ✅ | ✅ |
+| See **their own** shopping items | ✅ | ✅ | — |
+| See **everyone's** shopping items | ✅ | ❌ | sent items only |
 | Mark items purchased | ✅ | ✅ | ✅ |
-| Change anyone's role | ✅ | ❌ | ❌ |
+| Edit accounts, change roles | ✅ | ❌ | ❌ |
 
 These are not just hidden buttons. Every rule is enforced by Postgres row level
 security and guard triggers, so a member cannot approve a menu item or a driver read
@@ -80,6 +88,17 @@ member creates task              BLOCKED - new row violates row-level security p
 member suggests draft dish       ALLOWED
 member self-promotes to head     BLOCKED - Only the head of family can change roles
 head approves menu               ALLOWED
+
+member dish stays a draft                     draft
+member cannot self-approve a dish             blocked
+member cannot approve their own draft         blocked
+approver's dish is approved on the spot       approved
+approver can approve a member draft           approved
+driver cannot see an unsent basket            0 rows
+another member cannot see it either           0 rows
+the head can see everything                   3 rows
+driver sees the basket once sent              3 rows
+one notification per basket, not per item     1
 ```
 
 ---
@@ -96,31 +115,50 @@ before arrival**. If Google is not connected, each guest card still offers a one
 
 ### 2 · Menu suggestion → approval → automatic task
 
-Anyone suggests a dish; it is saved as `DRAFT` and is visible to all. Only the head can
-approve. On approval a database trigger:
+A dish suggested by an **approver** goes straight on the menu; anyone else's is saved
+as `DRAFT` and waits. Approvers are the head of family plus whoever they tick
+**Can approve menus** for in Settings — in practice, the wife. That flag is the only
+difference: it does not make them head, and it does not touch anything but the menu.
+
+Either way, the moment a dish is approved a database trigger:
 
 - creates a task — `Cook <dish>` for homemade items, `Buy <dish>` for outside ones,
 - assigns it to the cook (or to the person responsible for buying it),
+- names the restaurant in the task description when the dish is ordered in,
 - sets the due date to the serve date, raising priority to high if that is within a day,
 - notifies the suggester, the cook and the head.
+
+An outside dish must say **which restaurant or shop**, because whoever picks it up
+needs to know where to go. The name shows on the card, in the task, in the WhatsApp
+share, and is offered as a suggestion next time.
 
 When the cook later marks the task complete, the menu item follows it to `COMPLETED`.
 Moving a task to *in progress* moves the dish to *in progress* too.
 
-### 3 · Shopping list consolidation
+### 3 · Basket → send → the driver's list
 
-Everyone adds what they need, independently. The `shopping_consolidated` view groups
-by normalised item name + unit + category and sums the quantities, so the driver gets
-one line per item while each person keeps credit for their request:
+Shopping works like ordering online. Everything you tick lands in **your basket**,
+which is yours alone — no other family member can see it, and neither can the driver.
+You set the quantities and say which shop each thing comes from, then press **Send to
+driver** and the whole lot goes at once, as one notification rather than one per tick.
+
+A member sees only their own items, ever. The head sees everything; the driver sees
+everything that has been sent.
+
+Once sent, the driver reads the same items three ways, because the answer they need
+changes through the trip:
 
 ```
-Fatima  adds  Basmati Rice  2 kg
-Ahmed   adds  Chicken       1 kg
-Hassan  adds  Chicken       2 kg
-                    ↓
-Driver sees:  Chicken 3 kg  (merged from 2 requests · Ahmed, Hassan)
-              Basmati Rice 2 kg
+By shop            Merged totals            By person
+🏪 Panda           Chicken   3 kg  Panda    👤 Ahmed
+  Chicken 1 kg     Onions    2 kg  Othaim     Chicken 1 kg — Panda
+    (Ahmed)        Eggs      2 dz  Bindawood  Eggs    2 dz — Bindawood
+  Chicken 2 kg                                👤 Hassan
+    (Hassan)                                   Chicken 2 kg — Panda
 ```
+
+Merging is per shop, deliberately: chicken from Panda and chicken from Othaim are two
+different errands, so they stay two lines. Same item, same shop, same unit becomes one.
 
 The add-item form also warns about near-duplicates while you type, using trigram
 similarity — typing `chiken` finds the existing `Chicken` entries.
@@ -136,10 +174,10 @@ catalogue — 98 items across 12 categories — and you tick what you need:
 🥩 Meat              Chicken     ✓  1 kg   − +
 ```
 
-A tick writes an ordinary `shopping_list` row owned by you, so it merges into the
-driver's consolidated list exactly like a typed-in item. The driver opens the same
-page and sees one totalled line per item. Missing something? "+ Add item" still takes
-a free-text entry, and the head can add it to the catalogue for next time.
+A tick drops the item in your basket with its usual shop already filled in — eggs
+from Bindawood, chicken from Panda — which you can change per item before sending.
+Missing something? "+ Add item" still takes a free-text entry, and the head can add it
+to the catalogue for next time.
 
 ### 5 · Reminders
 
@@ -185,8 +223,8 @@ src/
   pages/          Login, Dashboard, Guests, Menu, Tasks, Shopping,
                   Notifications, Activity, Settings
   components/     Layout (sidebar + mobile bottom nav), NotificationBell, ui.tsx,
-                  GroceryPicker, GuestHistory, ChoresPanel, PushPanel,
-                  ShareButton, ErrorBoundary
+                  GroceryPicker, BasketPanel, DriverList, GuestHistory,
+                  ChoresPanel, PushPanel, ShareButton, ErrorBoundary
   context/        AuthContext (session + role), ToastContext
   lib/            supabase client, types, formatting + colour coding,
                   Google Calendar / .ics, CSV export, web push, WhatsApp links
@@ -203,11 +241,11 @@ supabase/
 
 | Table | Purpose |
 | --- | --- |
-| `users` | profile mirrored from `auth.users`: username, relation, role |
+| `users` | profile mirrored from `auth.users`: username, relation, role, menu approver |
 | `guests` | visits, with male/female counts, room, special needs, calendar event id |
 | `menu_items` | dish, status workflow, cook, homemade/outside, quantity, cost |
 | `tasks` | manual and menu-generated, priority, due date, status |
-| `shopping_list` | one row per request, with a generated `normalized_name` |
+| `shopping_list` | one row per request: which shop, and `submitted_at` once sent |
 | `grocery_catalogue` | the standing tick-list, by category, with default quantities |
 | `guest_profiles` | one row per guest: visit counts, nights, remembered preferences |
 | `recurring_tasks` | chore templates that generate real tasks when due |
@@ -215,9 +253,10 @@ supabase/
 | `push_subscriptions` | one row per device, so a phone and a laptop both get alerts |
 | `activity_log` | who did what and when |
 
-Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
+Plus the `shopping_consolidated`, `shopping_for_driver` and `guest_visits` views,
+and the RPCs
 `dashboard_stats`, `find_similar_shopping_items`, `set_shopping_status`,
-`mark_all_notifications_read`, `generate_recurring_tasks`.
+`mark_all_notifications_read`, `generate_recurring_tasks`, `submit_my_basket`.
 
 Three `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
 (12:00 UTC = 15:00 Riyadh), `ss-family-recurring-chores` (03:10 UTC = 06:10 Riyadh,

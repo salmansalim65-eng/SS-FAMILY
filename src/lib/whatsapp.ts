@@ -50,18 +50,25 @@ export function guestMessage(guest: Guest): string {
   return lines.join('\n')
 }
 
+/**
+ * Grouped by shop, not by category: whoever reads this is standing in a shop
+ * deciding what to put in the trolley, and one heading per trip beats one
+ * heading per food group.
+ */
 export function shoppingMessage(items: ConsolidatedItem[]): string {
   if (items.length === 0) return 'The shopping list is empty.'
 
-  const byCategory = new Map<string, ConsolidatedItem[]>()
+  const byStore = new Map<string, ConsolidatedItem[]>()
   for (const item of items) {
-    const key = item.category ?? 'Other'
-    byCategory.set(key, [...(byCategory.get(key) ?? []), item])
+    const key = item.store || 'Any shop'
+    byStore.set(key, [...(byStore.get(key) ?? []), item])
   }
 
   const lines = ['*Shopping list*', '']
-  for (const [category, group] of [...byCategory.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`*${category}*`)
+  for (const [store, group] of [...byStore.entries()].sort(([a], [b]) =>
+    a === 'Any shop' ? 1 : b === 'Any shop' ? -1 : a.localeCompare(b),
+  )) {
+    lines.push(`*🏪 ${store}*`)
     for (const item of group) {
       lines.push(`• ${item.item_name} — ${qty(item.total_quantity)} ${item.unit}`)
     }
@@ -76,7 +83,10 @@ export function menuMessage(items: MenuItem[], serveDate?: string | null): strin
 
   const lines = [serveDate ? `*Menu — ${fmtDate(serveDate)}*` : '*Menu*', '']
   for (const item of items) {
-    const how = item.homemade_or_outside === 'outside' ? '🛍️ ordered' : '🍳 homemade'
+    const how =
+      item.homemade_or_outside === 'outside'
+        ? `🛍️ from ${item.vendor ?? 'outside'}`
+        : '🍳 homemade'
     lines.push(`• ${item.dish_name} — ${qty(item.quantity)} ${item.unit ?? 'serving'} (${how})`)
   }
   lines.push('', '_SS Family_')

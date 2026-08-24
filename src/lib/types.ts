@@ -15,6 +15,8 @@ export interface AppUser {
   email: string
   phone: string | null
   whatsapp_number: string | null
+  /** May put a dish straight on the menu, no approval needed. */
+  can_approve_menu: boolean
   role: UserRole
   is_active: boolean
   created_at: string
@@ -84,9 +86,25 @@ export interface GroceryItem {
   category: string
   default_unit: string
   default_qty: number
+  default_store: string | null
   sort_order: number
   is_active: boolean
 }
+
+/** The shops the family actually uses, offered as suggestions. */
+export const STORES = [
+  'Bindawood',
+  'Panda',
+  'Othaim',
+  'Danube',
+  'Carrefour',
+  'Tamimi',
+  'LuLu',
+  'Local market',
+  'Butcher',
+  'Bakery',
+  'Pharmacy',
+] as const
 
 export const WEEKDAYS = [
   'Sunday',
@@ -157,6 +175,8 @@ export interface MenuItem {
   rejection_reason: string | null
   cook_person: string | null
   homemade_or_outside: PrepType
+  /** Which restaurant or shop an outside dish comes from. */
+  vendor: string | null
   outside_responsible: string | null
   quantity: number
   unit: string | null
@@ -198,16 +218,38 @@ export interface ShoppingItem {
   quantity: number
   unit: string
   category: string
+  /** Where to buy it — eggs from Bindawood, chicken from Panda. */
+  store: string | null
   added_by: string | null
   status: ShopStatus
   priority: Priority
   notes: string | null
   guest_id: string | null
+  /** Null while the item is still in its owner's private basket. */
+  submitted_at: string | null
+  catalogue_id: string | null
   purchased_by: string | null
   purchased_at: string | null
   created_at: string
   updated_at: string
   adder?: Pick<AppUser, 'id' | 'name'> | null
+}
+
+/** One sent item as the driver sees it: what, how much, for whom, from where. */
+export interface DriverItem {
+  id: string
+  item_name: string
+  category: string
+  quantity: number
+  unit: string
+  store: string
+  status: ShopStatus
+  priority: Priority
+  notes: string | null
+  added_by: string | null
+  requested_by: string
+  submitted_at: string
+  created_at: string
 }
 
 /** One line of the driver's list: every matching entry rolled into a total. */
@@ -216,6 +258,7 @@ export interface ConsolidatedItem {
   item_name: string
   category: string
   unit: string
+  store: string
   total_quantity: number
   entry_count: number
   status: ShopStatus
