@@ -145,8 +145,8 @@ a free-text entry, and the head can add it to the catalogue for next time.
 
 The `reminders` edge function notifies assignees **1 day before** a task is due, the
 family **3 days before** a staying guest arrives and **1 day before** a dinner guest.
-`pg_cron` runs it every day at 03:00 UTC (06:00 in Riyadh). It is idempotent, so a
-retry or a double run is harmless.
+`pg_cron` runs it every day at **15:00 Saudi time** (12:00 UTC). It is idempotent, so
+a retry or a double run is harmless.
 
 Check the schedule and the last few runs with:
 
@@ -169,8 +169,8 @@ touches it. Open **Guests → History** to read it before the next visit.
 
 A chore is a template, not a task: title, assignee, priority, and a frequency of
 daily, weekly (pick the weekday) or monthly (pick the day, 1–28, so it never skips a
-short month). A nightly job at 03:10 UTC turns each one into a real row in `tasks`
-when it falls due, which means chores inherit the same assignment, notification,
+short month). A nightly job at 06:10 Riyadh time turns each one into a real row in
+`tasks` when it falls due, which means chores inherit the same assignment, notification,
 reminder and completion handling as everything else.
 
 A chore that has been dormant for months produces **one** task, not a backlog. Pause
@@ -217,7 +217,8 @@ Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
 `mark_all_notifications_read`, `generate_recurring_tasks`.
 
 Two `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
-(03:00 UTC) and `ss-family-recurring-chores` (03:10 UTC).
+(12:00 UTC = 15:00 Riyadh) and `ss-family-recurring-chores` (03:10 UTC = 06:10
+Riyadh, so the day's chores exist before anyone is up).
 
 Colour coding is consistent throughout: **red** urgent/overdue, **amber** medium,
 **green** completed, **blue** in progress, **grey** draft/pending, **violet** approved.

@@ -133,7 +133,8 @@ revoke all on function public.next_occurrence(date, text, integer, integer)
 revoke all on function public.generate_recurring_tasks() from public, anon, authenticated;
 grant execute on function public.generate_recurring_tasks() to authenticated;
 
--- 03:10 UTC = 06:10 Riyadh, just after the reminders run.
+-- 03:10 UTC = 06:10 Riyadh: the day's chores exist before anyone is up, and
+-- well before the 15:00 reminder run picks them up.
 select cron.schedule(
   'ss-family-recurring-chores',
   '10 3 * * *',

@@ -1,16 +1,16 @@
 -- ============================================================================
--- SS-FAMILY :: run the reminders function every morning
+-- SS-FAMILY :: run the reminders function every afternoon
 --
--- 03:00 UTC = 06:00 in Riyadh, so "your task is due tomorrow" and "a guest
--- arrives in 3 days" land first thing. The function is idempotent — it skips
--- anything already sent today — so a retry or a double run is harmless.
+-- 12:00 UTC = 15:00 in Riyadh — mid-afternoon, when people are around to read
+-- them. The function is idempotent — it skips anything already sent today —
+-- so a retry or a double run is harmless.
 -- ============================================================================
 create extension if not exists pg_cron with schema cron;
 create extension if not exists pg_net with schema extensions;
 
 select cron.schedule(
   'ss-family-daily-reminders',
-  '0 3 * * *',
+  '0 12 * * *',
   $job$
     select net.http_post(
       url     := 'https://fhhecuvtgukcfulynwje.supabase.co/functions/v1/reminders',
