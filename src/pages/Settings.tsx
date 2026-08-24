@@ -71,6 +71,7 @@ export function SettingsPage() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
+  const [testingWhatsapp, setTestingWhatsapp] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
 
   const [pw1, setPw1] = useState('')
@@ -113,6 +114,32 @@ export function SettingsPage() {
   }, [tick])
 
   // ------------------------------------------------------------ my profile
+  /**
+   * Queues a notification to yourself and drains the queue immediately, so you
+   * find out whether Twilio is wired up without waiting for the 5-minute job.
+   */
+  const sendWhatsappTest = async () => {
+    setTestingWhatsapp(true)
+    const { data, error } = await supabase.functions.invoke('send-whatsapp', {
+      body: { test: true },
+    })
+    setTestingWhatsapp(false)
+
+    if (error) {
+      toast.error(errorMessage(error))
+      return
+    }
+
+    const result = data as { configured?: boolean; sent?: number } | null
+    if (result?.configured === false) {
+      toast.error('Twilio is not configured yet — no message was sent.')
+    } else if (result?.sent && result.sent > 0) {
+      toast.success('Sent. Check WhatsApp on your phone.')
+    } else {
+      toast.error('Twilio accepted nothing — open Notifications to see why.')
+    }
+  }
+
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
     setSavingProfile(true)
@@ -284,6 +311,17 @@ export function SettingsPage() {
               <Button type="submit" loading={savingProfile}>
                 Save profile
               </Button>
+              {isHead && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={testingWhatsapp}
+                  disabled={!whatsapp.trim()}
+                  onClick={() => void sendWhatsappTest()}
+                >
+                  Test WhatsApp
+                </Button>
+              )}
               <Button type="button" variant="secondary" onClick={() => void signOut()}>
                 Sign out
               </Button>

@@ -237,6 +237,7 @@ export type NotificationType =
   | 'shopping_updated'
   | 'shopping_purchased'
   | 'guest_arriving'
+  | 'system'
 
 export interface AppNotification {
   id: string

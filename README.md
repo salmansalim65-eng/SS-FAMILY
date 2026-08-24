@@ -216,9 +216,10 @@ Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
 `dashboard_stats`, `find_similar_shopping_items`, `set_shopping_status`,
 `mark_all_notifications_read`, `generate_recurring_tasks`.
 
-Two `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
-(12:00 UTC = 15:00 Riyadh) and `ss-family-recurring-chores` (03:10 UTC = 06:10
-Riyadh, so the day's chores exist before anyone is up).
+Three `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
+(12:00 UTC = 15:00 Riyadh), `ss-family-recurring-chores` (03:10 UTC = 06:10 Riyadh,
+so the day's chores exist before anyone is up) and `ss-family-whatsapp-drain` (every
+5 minutes).
 
 Colour coding is consistent throughout: **red** urgent/overdue, **amber** medium,
 **green** completed, **blue** in progress, **grey** draft/pending, **violet** approved.
@@ -243,28 +244,44 @@ GOOGLE_CALENDAR_ID        # optional, defaults to "primary"
 
 ```
 TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
+TWILIO_CONTENT_SID        # optional but see the 24-hour rule below
 ```
 
-A notification is queued for WhatsApp only when its recipient has a WhatsApp number
-saved in Settings. Until Twilio is configured, queued rows are marked *not configured*
-in the inbox rather than silently disappearing. The seed deliberately leaves WhatsApp
-numbers blank so nothing is ever sent to a placeholder number — add your own in
-**Settings → My profile**.
+A notification is queued for WhatsApp only when its recipient has a number saved in
+**Settings → My profile**. `ss-family-whatsapp-drain` empties the queue every 5
+minutes, and the 15:00 reminder run pushes its own batch immediately rather than
+waiting. A failed send is retried up to 3 times; anything older than 24 hours is
+retired unsent, because a stale reminder is worse than none. Until Twilio is
+configured, queued rows are marked *not configured* in the inbox rather than
+silently disappearing.
 
-**Daily reminders** — schedule the function once a day, e.g. with pg_cron:
+Head of family: **Settings → Test WhatsApp** sends yourself one message right now,
+which is the quickest way to find out whether the credentials work.
 
-```sql
-select cron.schedule(
-  'ss-family-reminders', '0 5 * * *',
-  $$select net.http_post(
-      url := 'https://<project>.supabase.co/functions/v1/reminders',
-      headers := '{"Content-Type":"application/json"}'::jsonb
-  )$$
-);
-```
+### The 24-hour rule
 
-Set a `CRON_SECRET` secret and send it as an `x-cron-secret` header to restrict who
-can trigger it.
+This is WhatsApp's rule, not Twilio's, and it catches everyone out. You may send
+**free-form** text only within 24 hours of that person's last message to you.
+Outside that window only a **pre-approved template** is delivered — Twilio rejects
+the rest with error 63016, which the inbox shows verbatim.
+
+So a 3pm reminder to someone who has not messaged the number today will *not* arrive
+as free-form text. Two ways through:
+
+| | Setup | Free-form | Reminders outside 24h |
+| --- | --- | --- | --- |
+| **Twilio sandbox** | minutes, free — each person sends `join <code>` once | ✅ for 24h after they message | ❌ |
+| **WhatsApp sender** | Meta business verification + your own approved template | ✅ | ✅ |
+
+For a production sender, create a Content template with two variables, then set
+`TWILIO_CONTENT_SID`. Every message then goes out as that template with `{{1}}` = the
+notification title and `{{2}}` = its body, so reminders arrive whatever the window.
+
+Note that `send-whatsapp` runs with `verify_jwt` off so pg_cron can reach it. Calling
+it only delivers messages that were already queued for family members' own numbers,
+and each is sent once, so an unwanted caller can hurry the queue along but cannot put
+anything new into it. The `test` action is the exception and does check the caller's
+JWT and head-of-family role.
 
 ---
 

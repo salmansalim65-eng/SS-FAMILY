@@ -16,6 +16,7 @@ const ICONS: Record<NotificationType, string> = {
   task_completed: '🎉',
   shopping_updated: '🛒',
   shopping_purchased: '🧾',
+  system: '⚙️',
 }
 
 /** Makes every realtime channel topic unique for the lifetime of the tab. */
