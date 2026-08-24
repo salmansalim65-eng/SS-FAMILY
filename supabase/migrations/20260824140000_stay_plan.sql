@@ -340,8 +340,8 @@ values
    'daily', 0, 1, 0, 'medium', 140, true),
 
   ('evening_tea', 'Evening tea and something sweet',
-   'Off by default — switch it on if it suits the household.',
-   'daily', 0, 1, 0, 'low', 150, false),
+   'A pot of tea and something sweet in the evening — the part of the day guests remember.',
+   'daily', 0, 1, 0, 'low', 150, true),
 
   -- -------------------------------------------------------------- periodic
   ('fresh_towels', 'Fresh towels for the guests', 'Swap them out; do not wait to be asked.',

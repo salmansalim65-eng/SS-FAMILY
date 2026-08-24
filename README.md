@@ -175,7 +175,8 @@ then simply follows.
                         snack bar · room check (AC, WiFi, iron, prayer mat)
                         confirm the pickup · plan the menu
 🤝 Arrival day          welcome tray of dates and qahwa · show them around
-🍽️ Every day            breakfast · lunch · dinner · tidy the room · refill water
+🍽️ Every day            breakfast · lunch · dinner · evening tea and something
+                        sweet · tidy the room · refill water
 🧺 Every few days       fresh towels (2) · laundry (3) · change the linen (4)
 👋 Departure day        pack snacks for the journey · check for forgotten things
                         farewell gift · drop them to the airport
