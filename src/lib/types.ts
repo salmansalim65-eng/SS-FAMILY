@@ -39,9 +39,15 @@ export const RELATIONS = [
   'Helper',
 ] as const
 
+/** 'staying' sleeps in the house; 'dinner' is invited for a meal only. */
+export type GuestType = 'staying' | 'dinner'
+
 export interface Guest {
   id: string
   name: string
+  guest_type: GuestType
+  /** For dinner guests: what time they are expected. */
+  event_time: string | null
   arrival_date: string
   departure_date: string | null
   male_count: number

@@ -1,12 +1,16 @@
 // ---------------------------------------------------------------------------
 // google-calendar
 //
-// Creates (or updates) an all-day Google Calendar event for a guest visit,
-// with a reminder 3 days before arrival.
+// Creates, updates or deletes the Google Calendar event for a guest visit.
+// Two shapes, matching the two kinds of guest:
+//
+//   staying  all-day event spanning arrival → departure (end date exclusive)
+//   dinner   timed event on one date, default 3 hours, in the family time zone
 //
 // Secrets required:
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
-//   GOOGLE_CALENDAR_ID   (optional, defaults to "primary")
+//   GOOGLE_CALENDAR_ID   (optional, defaults to "primary" — set this to the
+//                         shared family calendar so everyone sees the event)
 //
 // With none of them set the function is a well-behaved no-op: it replies
 // { configured: false } and the app falls back to an "Add to Calendar" link
@@ -15,12 +19,17 @@
 import { corsHeaders, json } from './cors.ts'
 
 interface Payload {
+  action?: 'upsert' | 'delete'
   guestId?: string
-  summary: string
+  guestType?: 'staying' | 'dinner'
+  summary?: string
   description?: string
   location?: string
-  startDate: string
+  startDate?: string
   endDate?: string | null
+  startTime?: string | null
+  durationHours?: number
+  timeZone?: string
   reminderDaysBefore?: number
   existingEventId?: string | null
 }
@@ -31,6 +40,13 @@ function addDays(iso: string, days: number): string {
   const date = new Date(`${iso}T00:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)
   return date.toISOString().slice(0, 10)
+}
+
+/** "20:00" + 3h -> "23:00", clamped inside the same day. */
+function addHours(time: string, hours: number): string {
+  const [h, m] = time.split(':').map(Number)
+  const end = Math.min(h + hours, 23)
+  return `${String(end).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`
 }
 
 async function accessToken(id: string, secret: string, refresh: string): Promise<string> {
@@ -76,49 +92,92 @@ Deno.serve(async (req: Request) => {
     return json({ configured: true, error: 'Invalid JSON body' }, 400)
   }
 
-  if (!payload.summary || !payload.startDate) {
-    return json({ configured: true, error: 'summary and startDate are required' }, 400)
-  }
-
-  const reminderDays = payload.reminderDaysBefore ?? 3
-  const reminderMinutes = reminderDays * 24 * 60
-
-  // Google treats an all-day event's end date as exclusive.
-  const start = payload.startDate
-  const end = addDays(payload.endDate || payload.startDate, 1)
-
-  const event = {
-    summary: payload.summary,
-    description: payload.description ?? '',
-    location: payload.location ?? '',
-    start: { date: start },
-    end: { date: end },
-    reminders: {
-      useDefault: false,
-      overrides: [
-        { method: 'popup', minutes: reminderMinutes },
-        { method: 'email', minutes: reminderMinutes },
-      ],
-    },
-    extendedProperties: payload.guestId
-      ? { private: { ssFamilyGuestId: payload.guestId } }
-      : undefined,
-  }
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
 
   try {
     const token = await accessToken(clientId, clientSecret, refreshToken)
 
-    const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
-    const url = payload.existingEventId
-      ? `${base}/${encodeURIComponent(payload.existingEventId)}`
-      : base
+    // ------------------------------------------------------------- delete
+    if (payload.action === 'delete') {
+      if (!payload.existingEventId) return json({ configured: true, ok: true })
+
+      const response = await fetch(`${base}/${encodeURIComponent(payload.existingEventId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      // 404/410 mean it is already gone, which is the outcome we wanted.
+      if (!response.ok && ![404, 410].includes(response.status)) {
+        return json({ configured: true, error: 'Could not delete the event.' }, 502)
+      }
+      return json({ configured: true, ok: true, message: 'Calendar event removed.' })
+    }
+
+    // ------------------------------------------------------------- upsert
+    if (!payload.summary || !payload.startDate) {
+      return json({ configured: true, error: 'summary and startDate are required' }, 400)
+    }
+
+    const reminderDays = payload.reminderDaysBefore ?? 3
+    const reminderMinutes = reminderDays * 24 * 60
+    const timeZone = payload.timeZone || 'Asia/Riyadh'
+
+    // A dinner is a timed event; a stay is an all-day span.
+    const timed = payload.guestType === 'dinner' && !!payload.startTime
+    const when = timed
+      ? {
+          start: {
+            dateTime: `${payload.startDate}T${payload.startTime}:00`,
+            timeZone,
+          },
+          end: {
+            dateTime: `${payload.startDate}T${addHours(
+              payload.startTime!,
+              payload.durationHours ?? 3,
+            )}`,
+            timeZone,
+          },
+        }
+      : {
+          start: { date: payload.startDate },
+          end: { date: addDays(payload.endDate || payload.startDate, 1) },
+        }
+
+    const event = {
+      ...when,
+      summary: payload.summary,
+      description: payload.description ?? '',
+      location: payload.location ?? '',
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: reminderMinutes },
+          { method: 'email', minutes: reminderMinutes },
+        ],
+      },
+      extendedProperties: payload.guestId
+        ? { private: { ssFamilyGuestId: payload.guestId } }
+        : undefined,
+    }
+
+    // Editing a guest updates the same event rather than making a second one.
+    let url = base
+    let method = 'POST'
+
+    if (payload.existingEventId) {
+      const probe = await fetch(`${base}/${encodeURIComponent(payload.existingEventId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (probe.ok) {
+        url = `${base}/${encodeURIComponent(payload.existingEventId)}`
+        method = 'PATCH'
+      }
+      // If the event was deleted in Google, fall through and create a new one.
+    }
 
     const response = await fetch(url, {
-      method: payload.existingEventId ? 'PATCH' : 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
     })
 
@@ -128,7 +187,7 @@ Deno.serve(async (req: Request) => {
         {
           configured: true,
           error: body?.error?.message ?? 'Google Calendar rejected the event',
-          message: 'Could not create the calendar event.',
+          message: 'Could not save the calendar event.',
         },
         502,
       )
@@ -138,7 +197,10 @@ Deno.serve(async (req: Request) => {
       configured: true,
       eventId: body.id,
       htmlLink: body.htmlLink,
-      message: `Event created with a ${reminderDays}-day reminder.`,
+      message:
+        method === 'PATCH'
+          ? 'Calendar event updated.'
+          : `Added to Google Calendar with a ${reminderDays}-day reminder.`,
     })
   } catch (error) {
     return json(
