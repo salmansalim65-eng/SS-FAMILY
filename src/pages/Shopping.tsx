@@ -20,6 +20,7 @@ import {
   Spinner,
   Textarea,
 } from '../components/ui'
+import { GroceryPicker } from '../components/GroceryPicker'
 import { SHOPPING_CATEGORIES, UNITS } from '../lib/types'
 import type { ConsolidatedItem, Guest, Priority, ShoppingItem } from '../lib/types'
 
@@ -32,6 +33,8 @@ interface SimilarItem {
   added_by_name: string | null
   score: number
 }
+
+type View = 'grocery' | 'list' | 'detail'
 
 const EMPTY = {
   item_name: '',
@@ -48,8 +51,9 @@ export function ShoppingPage() {
   const toast = useToast()
   const [tick, reload] = useReload()
 
-  // The driver only ever gets the consolidated list.
-  const [view, setView] = useState<'list' | 'detail'>(isDriver ? 'list' : 'list')
+  // Family land on the tick list — that is the everyday action. The driver
+  // only ever gets the consolidated list.
+  const [view, setView] = useState<View>(isDriver ? 'list' : 'grocery')
   const [consolidated, setConsolidated] = useState<ConsolidatedItem[]>([])
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
@@ -66,7 +70,9 @@ export function ShoppingPage() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
+    // Deliberately not flipping `loading` back on for refetches: a reload runs
+    // after every grocery tick, and showing the spinner again would unmount the
+    // tick list, losing scroll position, collapsed sections and local state.
 
     // The driver may only read the consolidated view, so the per-person rows
     // and the guest list are fetched for family roles only.
@@ -332,9 +338,10 @@ export function ShoppingPage() {
         <div className="no-print mb-5 flex rounded-xl bg-sand-100 p-1">
           {(
             [
+              ['grocery', '🥕 Grocery'],
               ['list', "🚗 Driver's list"],
               ['detail', '👥 Who added what'],
-            ] as ['list' | 'detail', string][]
+            ] as [View, string][]
           ).map(([key, label]) => (
             <button
               key={key}
@@ -351,6 +358,8 @@ export function ShoppingPage() {
 
       {loading ? (
         <Spinner label="Loading list" />
+      ) : view === 'grocery' ? (
+        <GroceryPicker onChanged={reload} />
       ) : view === 'list' ? (
         visibleGroups.length === 0 ? (
           <EmptyState

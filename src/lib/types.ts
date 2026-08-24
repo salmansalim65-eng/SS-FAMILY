@@ -20,6 +20,84 @@ export interface AppUser {
   created_at: string
 }
 
+/** One guest/family rolled up across all their visits. */
+export interface GuestProfile {
+  id: string
+  normalized_name: string
+  display_name: string
+  relationship: string | null
+  default_room: string | null
+  phone: string | null
+  origin_city: string | null
+  /** Curated by the family, never overwritten by the sync. */
+  notes: string | null
+  last_special_needs: string | null
+  first_visit: string | null
+  last_visit: string | null
+  visit_count: number
+  staying_count: number
+  dinner_count: number
+  total_nights: number
+  total_guests_seen: number
+}
+
+export interface GuestVisit {
+  id: string
+  normalized_name: string
+  name: string
+  guest_type: GuestType
+  arrival_date: string
+  departure_date: string | null
+  event_time: string | null
+  male_count: number
+  female_count: number
+  total_guests: number
+  room: string | null
+  special_needs: string | null
+  relationship: string | null
+  nights: number | null
+  created_at: string
+}
+
+export type Frequency = 'daily' | 'weekly' | 'monthly'
+
+export interface RecurringTask {
+  id: string
+  title: string
+  description: string | null
+  assigned_to: string | null
+  priority: Priority
+  frequency: Frequency
+  day_of_week: number | null
+  day_of_month: number | null
+  is_active: boolean
+  next_due: string
+  last_generated_on: string | null
+  created_by: string | null
+  created_at: string
+  assignee?: Pick<AppUser, 'id' | 'name'> | null
+}
+
+export interface GroceryItem {
+  id: string
+  name: string
+  category: string
+  default_unit: string
+  default_qty: number
+  sort_order: number
+  is_active: boolean
+}
+
+export const WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
 /** Suggestions only — the field accepts any text. */
 export const RELATIONS = [
   'Head of Family',

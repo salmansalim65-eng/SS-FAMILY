@@ -28,11 +28,13 @@ import {
   Spinner,
   Textarea,
 } from '../components/ui'
+import { ChoresPanel } from '../components/ChoresPanel'
 import type { Guest, Priority, Task, TaskStatus } from '../lib/types'
 
 const SELECT = '*, assignee:users!tasks_assigned_to_fkey(id, name), guest:guests(id, name)'
 
 type Scope = 'mine' | 'open' | 'overdue' | 'all'
+type Mode = 'tasks' | 'chores'
 
 const EMPTY = {
   title: '',
@@ -54,6 +56,7 @@ export function TasksPage() {
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<Scope>('open')
+  const [mode, setMode] = useState<Mode>('tasks')
   const [search, setSearch] = useState('')
 
   const [formOpen, setFormOpen] = useState(false)
@@ -223,6 +226,26 @@ export function TasksPage() {
         {isHead && <Button onClick={openCreate}>+ New task</Button>}
       </header>
 
+      <div className="mb-4 flex rounded-xl bg-sand-100 p-1">
+        {([['tasks', '✅ Tasks'], ['chores', '🔁 Recurring chores']] as [Mode, string][]).map(
+          ([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition ${
+                mode === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+              }`}
+            >
+              {label}
+            </button>
+          ),
+        )}
+      </div>
+
+      {mode === 'chores' ? (
+        <ChoresPanel />
+      ) : (
+        <>
       <div className="mb-5 flex flex-col gap-3">
         <SearchBar value={search} onChange={setSearch} placeholder="Search tasks…" />
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
@@ -283,6 +306,9 @@ export function TasksPage() {
             />
           ))}
         </div>
+      )}
+
+        </>
       )}
 
       <Modal

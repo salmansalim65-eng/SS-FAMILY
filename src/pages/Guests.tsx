@@ -27,10 +27,12 @@ import {
   Spinner,
   Textarea,
 } from '../components/ui'
+import { GuestHistory } from '../components/GuestHistory'
 import type { Guest, GuestType } from '../lib/types'
 
 type When = 'upcoming' | 'current' | 'past' | 'all'
 type Kind = 'all' | GuestType
+type Mode = 'upcoming' | 'history'
 
 const EMPTY = {
   guest_type: 'staying' as GuestType,
@@ -57,6 +59,7 @@ export function GuestsPage() {
   const [search, setSearch] = useState('')
   const [when, setWhen] = useState<When>('upcoming')
   const [kind, setKind] = useState<Kind>('all')
+  const [mode, setMode] = useState<Mode>('upcoming')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Guest | null>(null)
@@ -290,6 +293,27 @@ export function GuestsPage() {
         </div>
       </header>
 
+      {/* --------------------------------------------------------- mode tabs */}
+      <div className="mb-4 flex rounded-xl bg-sand-100 p-1">
+        {([['upcoming', '🧳 Visits'], ['history', '📖 History']] as [Mode, string][]).map(
+          ([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition ${
+                mode === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+              }`}
+            >
+              {label}
+            </button>
+          ),
+        )}
+      </div>
+
+      {mode === 'history' ? (
+        <GuestHistory />
+      ) : (
+        <>
       {/* ------------------------------------------------------- category tabs */}
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {(
@@ -368,6 +392,9 @@ export function GuestsPage() {
             />
           ))}
         </div>
+      )}
+
+        </>
       )}
 
       {/* ----------------------------------------------------------- form */}

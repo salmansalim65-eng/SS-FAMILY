@@ -125,11 +125,56 @@ Driver sees:  Chicken 3 kg  (merged from 2 requests · Ahmed, Hassan)
 The add-item form also warns about near-duplicates while you type, using trigram
 similarity — typing `chiken` finds the existing `Chicken` entries.
 
-### 4 · Reminders
+### 4 · The grocery list
 
-The `reminders` edge function, run once a day, notifies assignees **1 day before** a
-task is due and the whole family **3 days before** a guest arrives. It is idempotent,
-so running it more than once a day is harmless.
+Family members do not have to type anything. The **Grocery** tab shows the standing
+catalogue — 98 items across 12 categories — and you tick what you need:
+
+```
+🥬 Vegetables        Onions      ✓  2 kg   − +
+                     Tomatoes       2 kg
+🥩 Meat              Chicken     ✓  1 kg   − +
+```
+
+A tick writes an ordinary `shopping_list` row owned by you, so it merges into the
+driver's consolidated list exactly like a typed-in item. The driver opens the same
+page and sees one totalled line per item. Missing something? "+ Add item" still takes
+a free-text entry, and the head can add it to the catalogue for next time.
+
+### 5 · Reminders
+
+The `reminders` edge function notifies assignees **1 day before** a task is due, the
+family **3 days before** a staying guest arrives and **1 day before** a dinner guest.
+`pg_cron` runs it every day at 03:00 UTC (06:00 in Riyadh). It is idempotent, so a
+retry or a double run is harmless.
+
+Check the schedule and the last few runs with:
+
+```sql
+select jobname, schedule, active from cron.job;
+select status_code, content from net._http_response order by id desc limit 5;
+```
+
+### 6 · Guest history
+
+Every visit stays in `guests`. `guest_profiles` is the rolled-up record of one guest
+across all of them — how often they have come, how many nights, the room they usually
+take — and it is maintained by a trigger, so it is never stale.
+
+One field is deliberately **not** derived: `notes`. That is where the family writes
+what it has learned ("prefers the ground-floor room", "no chilli"), and the sync never
+touches it. Open **Guests → History** to read it before the next visit.
+
+### 7 · Recurring chores
+
+A chore is a template, not a task: title, assignee, priority, and a frequency of
+daily, weekly (pick the weekday) or monthly (pick the day, 1–28, so it never skips a
+short month). A nightly job at 03:10 UTC turns each one into a real row in `tasks`
+when it falls due, which means chores inherit the same assignment, notification,
+reminder and completion handling as everything else.
+
+A chore that has been dormant for months produces **one** task, not a backlog. Pause
+one at any time; the head can also press "Run now" to generate immediately.
 
 ---
 
@@ -139,12 +184,15 @@ so running it more than once a day is harmless.
 src/
   pages/          Login, Dashboard, Guests, Menu, Tasks, Shopping,
                   Notifications, Activity, Settings
-  components/     Layout (sidebar + mobile bottom nav), NotificationBell, ui.tsx
+  components/     Layout (sidebar + mobile bottom nav), NotificationBell, ui.tsx,
+                  GroceryPicker, GuestHistory, ChoresPanel, ErrorBoundary
   context/        AuthContext (session + role), ToastContext
   lib/            supabase client, types, formatting + colour coding,
                   Google Calendar / .ics, CSV export
 supabase/
   migrations/     schema → logic → security → hardening → username accounts
+                  → guest types → reminders cron → guest profiles
+                  → recurring chores → grocery catalogue
   functions/      admin-users, google-calendar, send-whatsapp, reminders
   seed.sql        bootstrap the ss head-of-family account
 ```
@@ -158,11 +206,18 @@ supabase/
 | `menu_items` | dish, status workflow, cook, homemade/outside, quantity, cost |
 | `tasks` | manual and menu-generated, priority, due date, status |
 | `shopping_list` | one row per request, with a generated `normalized_name` |
+| `grocery_catalogue` | the standing tick-list, by category, with default quantities |
+| `guest_profiles` | one row per guest: visit counts, nights, remembered preferences |
+| `recurring_tasks` | chore templates that generate real tasks when due |
 | `notifications` | in-app inbox plus the WhatsApp delivery queue |
 | `activity_log` | who did what and when |
 
-Plus the `shopping_consolidated` view and the RPCs `dashboard_stats`,
-`find_similar_shopping_items`, `set_shopping_status`, `mark_all_notifications_read`.
+Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
+`dashboard_stats`, `find_similar_shopping_items`, `set_shopping_status`,
+`mark_all_notifications_read`, `generate_recurring_tasks`.
+
+Two `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
+(03:00 UTC) and `ss-family-recurring-chores` (03:10 UTC).
 
 Colour coding is consistent throughout: **red** urgent/overdue, **amber** medium,
 **green** completed, **blue** in progress, **grey** draft/pending, **violet** approved.
