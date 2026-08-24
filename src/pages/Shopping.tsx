@@ -22,6 +22,8 @@ import {
 } from '../components/ui'
 import { GroceryPicker } from '../components/GroceryPicker'
 import { SHOPPING_CATEGORIES, UNITS } from '../lib/types'
+import { ShareButton } from '../components/ShareButton'
+import { shoppingMessage } from '../lib/whatsapp'
 import type { ConsolidatedItem, Guest, Priority, ShoppingItem } from '../lib/types'
 
 interface SimilarItem {
@@ -290,6 +292,10 @@ export function ShoppingPage() {
           <Button variant="secondary" onClick={() => window.print()}>
             🖨 Print
           </Button>
+          <ShareButton
+            text={() => shoppingMessage(consolidated.filter((c) => c.status === 'pending'))}
+            label="Send list"
+          />
           {isFamily && (
             <>
               <Button variant="secondary" onClick={exportCsv} disabled={consolidated.length === 0}>

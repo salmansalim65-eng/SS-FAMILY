@@ -20,6 +20,8 @@ import {
   Textarea,
 } from '../components/ui'
 import { MEAL_TYPES, UNITS } from '../lib/types'
+import { ShareButton } from '../components/ShareButton'
+import { menuMessage } from '../lib/whatsapp'
 import type { Guest, MealType, MenuItem, MenuStatus, PrepType } from '../lib/types'
 
 const STATUS_TABS: { key: MenuStatus | 'all'; label: string }[] = [
@@ -254,7 +256,14 @@ export function MenuPage() {
             {visible.length} dish{visible.length === 1 ? '' : 'es'} · estimated {money(totalCost)}
           </p>
         </div>
-        <Button onClick={openCreate}>+ Suggest a dish</Button>
+        <div className="flex flex-wrap gap-2">
+          <ShareButton
+            text={() => menuMessage(visible)}
+            label="Send menu"
+            className="disabled:opacity-50"
+          />
+          <Button onClick={openCreate}>+ Suggest a dish</Button>
+        </div>
       </header>
 
       {isHead && (counts.draft ?? 0) > 0 && (

@@ -3,6 +3,7 @@ import { supabase, errorMessage } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useReload, useUsers } from '../lib/hooks'
+import { shareToWhatsApp, taskMessage } from '../lib/whatsapp'
 import {
   countdown,
   daysFromToday,
@@ -531,6 +532,13 @@ function TaskRow({
               ↩ Reopen
             </Button>
           )}
+          <button
+            onClick={() => shareToWhatsApp(taskMessage(task, task.assignee?.name))}
+            className="rounded-lg bg-sand-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-200"
+            title="Open WhatsApp with this task ready to send"
+          >
+            💬 Share
+          </button>
           {canManage && (
             <div className="flex gap-2">
               <button

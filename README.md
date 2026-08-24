@@ -185,15 +185,17 @@ src/
   pages/          Login, Dashboard, Guests, Menu, Tasks, Shopping,
                   Notifications, Activity, Settings
   components/     Layout (sidebar + mobile bottom nav), NotificationBell, ui.tsx,
-                  GroceryPicker, GuestHistory, ChoresPanel, ErrorBoundary
+                  GroceryPicker, GuestHistory, ChoresPanel, PushPanel,
+                  ShareButton, ErrorBoundary
   context/        AuthContext (session + role), ToastContext
   lib/            supabase client, types, formatting + colour coding,
-                  Google Calendar / .ics, CSV export
+                  Google Calendar / .ics, CSV export, web push, WhatsApp links
+public/         service worker, web app manifest, icons
 supabase/
   migrations/     schema → logic → security → hardening → username accounts
                   → guest types → reminders cron → guest profiles
-                  → recurring chores → grocery catalogue
-  functions/      admin-users, google-calendar, send-whatsapp, reminders
+                  → recurring chores → grocery catalogue → web push
+  functions/      admin-users, google-calendar, send-push, reminders
   seed.sql        bootstrap the ss head-of-family account
 ```
 
@@ -209,7 +211,8 @@ supabase/
 | `grocery_catalogue` | the standing tick-list, by category, with default quantities |
 | `guest_profiles` | one row per guest: visit counts, nights, remembered preferences |
 | `recurring_tasks` | chore templates that generate real tasks when due |
-| `notifications` | in-app inbox plus the WhatsApp delivery queue |
+| `notifications` | in-app inbox plus the push delivery queue |
+| `push_subscriptions` | one row per device, so a phone and a laptop both get alerts |
 | `activity_log` | who did what and when |
 
 Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
@@ -218,8 +221,8 @@ Plus the `shopping_consolidated` and `guest_visits` views, and the RPCs
 
 Three `pg_cron` jobs keep the place running unattended: `ss-family-daily-reminders`
 (12:00 UTC = 15:00 Riyadh), `ss-family-recurring-chores` (03:10 UTC = 06:10 Riyadh,
-so the day's chores exist before anyone is up) and `ss-family-whatsapp-drain` (every
-5 minutes).
+so the day's chores exist before anyone is up) and `ss-family-push-drain` (every
+minute).
 
 Colour coding is consistent throughout: **red** urgent/overdue, **amber** medium,
 **green** completed, **blue** in progress, **grey** draft/pending, **violet** approved.
@@ -240,48 +243,41 @@ GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
 GOOGLE_CALENDAR_ID        # optional, defaults to "primary"
 ```
 
-**WhatsApp via Twilio** — notification delivery
+**Phone notifications** — the app pushes its own
 
 ```
-TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
-TWILIO_CONTENT_SID        # optional but see the 24-hour rule below
+VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+VAPID_SUBJECT             # optional, a mailto: identifying the sender
 ```
 
-A notification is queued for WhatsApp only when its recipient has a number saved in
-**Settings → My profile**. `ss-family-whatsapp-drain` empties the queue every 5
-minutes, and the 15:00 reminder run pushes its own batch immediately rather than
-waiting. A failed send is retried up to 3 times; anything older than 24 hours is
-retired unsent, because a stale reminder is worse than none. Until Twilio is
-configured, queued rows are marked *not configured* in the inbox rather than
-silently disappearing.
+Generate a pair with `npx web-push generate-vapid-keys`. The public half also
+goes in `.env.production` as `VITE_VAPID_PUBLIC_KEY` — it is public by design,
+the browser needs it to subscribe. The private half never leaves Supabase.
 
-Head of family: **Settings → Test WhatsApp** sends yourself one message right now,
-which is the quickest way to find out whether the credentials work.
+`ss-family-push-drain` empties the queue every minute, and the 15:00 reminder
+run pushes its own batch immediately rather than waiting. A subscription that
+the push service reports as gone (404/410) is deleted on the spot, so a
+reinstalled browser never leaves a dead device behind.
 
-### The 24-hour rule
+Each person turns notifications on once per device in **Settings → Phone
+notifications**, which also lists their registered devices and can send a test.
+On iPhone and iPad there is one extra step: Apple only grants the Push API to a
+web app added to the Home Screen (Share → Add to Home Screen), and the panel
+says so rather than offering a button that would quietly do nothing.
 
-This is WhatsApp's rule, not Twilio's, and it catches everyone out. You may send
-**free-form** text only within 24 hours of that person's last message to you.
-Outside that window only a **pre-approved template** is delivered — Twilio rejects
-the rest with error 63016, which the inbox shows verbatim.
+### Why not WhatsApp?
 
-So a 3pm reminder to someone who has not messaged the number today will *not* arrive
-as free-form text. Two ways through:
+An application cannot send a WhatsApp message. Meta only allows it through the
+WhatsApp Business API or a reseller such as Twilio, which means business
+verification, per-message fees, and a rule that free-form text is delivered
+only within 24 hours of the recipient's last message — precisely the window a
+3pm reminder falls outside.
 
-| | Setup | Free-form | Reminders outside 24h |
-| --- | --- | --- | --- |
-| **Twilio sandbox** | minutes, free — each person sends `join <code>` once | ✅ for 24h after they message | ❌ |
-| **WhatsApp sender** | Meta business verification + your own approved template | ✅ | ✅ |
-
-For a production sender, create a Content template with two variables, then set
-`TWILIO_CONTENT_SID`. Every message then goes out as that template with `{{1}}` = the
-notification title and `{{2}}` = its body, so reminders arrive whatever the window.
-
-Note that `send-whatsapp` runs with `verify_jwt` off so pg_cron can reach it. Calling
-it only delivers messages that were already queued for family members' own numbers,
-and each is sent once, so an unwanted caller can hurry the queue along but cannot put
-anything new into it. The `test` action is the exception and does check the caller's
-JWT and head-of-family role.
+So the app does the honest version instead. **ShareButton** puts a one-tap
+"open WhatsApp with this message already written" link on a guest, a task, the
+menu and the shopping list; you pick the family group and press send. No
+account, no fees, no 24-hour rule — and the automatic alerts go out as push
+notifications, which arrive whether or not anyone has messaged anything.
 
 ---
 

@@ -249,8 +249,8 @@ export interface AppNotification {
   entity_id: string | null
   link: string | null
   sent_via: string[]
-  whatsapp_status: 'not_sent' | 'queued' | 'sent' | 'failed' | 'disabled'
-  whatsapp_error: string | null
+  push_status: 'queued' | 'sent' | 'no_device' | 'failed'
+  push_error: string | null
   sent_at: string
   read_at: string | null
   created_at: string

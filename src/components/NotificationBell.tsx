@@ -203,9 +203,9 @@ export function NotificationBell() {
                     <span className="mt-0.5 block text-xs leading-snug text-slate-600">
                       {item.message}
                     </span>
-                    {item.whatsapp_status === 'sent' && (
+                    {item.push_status === 'sent' && (
                       <span className="mt-1 inline-block text-[10px] font-semibold text-emerald-600">
-                        ✓ also sent on WhatsApp
+                        ✓ also sent to your phone
                       </span>
                     )}
                   </span>

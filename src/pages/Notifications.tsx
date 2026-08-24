@@ -126,15 +126,15 @@ export function NotificationsPage() {
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Badge tone="gray">{item.type.replace(/_/g, ' ')}</Badge>
-                    {item.whatsapp_status === 'sent' && <Badge tone="green">✓ WhatsApp sent</Badge>}
-                    {item.whatsapp_status === 'queued' && <Badge tone="yellow">WhatsApp queued</Badge>}
-                    {item.whatsapp_status === 'failed' && (
-                      <Badge tone="red" className="max-w-full truncate">
-                        WhatsApp failed
-                      </Badge>
+                    {item.push_status === 'sent' && <Badge tone="green">✓ Pushed to your phone</Badge>}
+                    {item.push_status === 'queued' && <Badge tone="yellow">Sending…</Badge>}
+                    {item.push_status === 'no_device' && (
+                      <Badge tone="gray">No device — turn on notifications in Settings</Badge>
                     )}
-                    {item.whatsapp_status === 'disabled' && (
-                      <Badge tone="gray">WhatsApp not configured</Badge>
+                    {item.push_status === 'failed' && (
+                      <Badge tone="red" className="max-w-full truncate">
+                        Push failed
+                      </Badge>
                     )}
                   </span>
                 </span>

@@ -3,7 +3,7 @@
 //
 // Run this once a day (pg_cron, GitHub Actions, any scheduler). It raises:
 //   * "task due tomorrow"  for every open task due in 1 day
-//   * "guest arriving"     for every visit starting in 3 days
+//   * "guest arriving"     3 days before a stay, 1 day before a dinner
 //
 // Both are idempotent: a reminder that already went out today is not repeated,
 // so running the job more than once a day is harmless.
@@ -82,11 +82,13 @@ Deno.serve(async (req: Request) => {
     if (!error) taskReminders += 1
   }
 
-  // ---------------------------------------------------- guests in 3 days
+  // -------------------------------------------------------- guests arriving
+  // Someone moving in needs three days of preparation. Someone coming for
+  // dinner needs one — remind three days early and it is forgotten by then.
   const { data: guests } = await supabase
     .from('guests')
-    .select('id, name, arrival_date, male_count, female_count, room')
-    .eq('arrival_date', isoDate(3))
+    .select('id, name, arrival_date, guest_type, event_time, male_count, female_count, room')
+    .in('arrival_date', [isoDate(1), isoDate(3)])
 
   const { data: family } = await supabase
     .from('users')
@@ -98,16 +100,27 @@ Deno.serve(async (req: Request) => {
 
   for (const guest of guests ?? []) {
     if (familyIds.length === 0) break
+
+    const dinner = guest.guest_type === 'dinner'
+    const wantedDay = dinner ? isoDate(1) : isoDate(3)
+    if (guest.arrival_date !== wantedDay) continue
     if (await alreadySent('guest_arriving', guest.id)) continue
 
     const total = (guest.male_count ?? 0) + (guest.female_count ?? 0)
+    const when = dinner ? 'tomorrow' : 'in 3 days'
+
     const { error } = await supabase.rpc('fn_notify', {
       p_users: familyIds,
       p_type: 'guest_arriving',
-      p_title: `${guest.name} arrives in 3 days`,
-      p_message:
-        `${guest.name} arrives on ${ddMon(guest.arrival_date)} with ${total} guest(s)` +
-        `${guest.room ? `, staying in ${guest.room}` : ''}. Time to get everything ready.`,
+      p_title: dinner
+        ? `${guest.name} comes for dinner ${when}`
+        : `${guest.name} arrives ${when}`,
+      p_message: dinner
+        ? `${guest.name} is coming for dinner on ${ddMon(guest.arrival_date)}` +
+          `${guest.event_time ? ` at ${guest.event_time.slice(0, 5)}` : ''}` +
+          `, ${total} guest(s). Time to plan the menu.`
+        : `${guest.name} arrives on ${ddMon(guest.arrival_date)} with ${total} guest(s)` +
+          `${guest.room ? `, staying in ${guest.room}` : ''}. Time to get everything ready.`,
       p_entity_type: 'guest',
       p_entity_id: guest.id,
       p_link: '/guests',
@@ -115,11 +128,12 @@ Deno.serve(async (req: Request) => {
     if (!error) guestReminders += 1
   }
 
-  // Hand anything newly queued straight to WhatsApp, if that is configured.
-  let whatsapp: unknown = 'skipped'
+  // Push anything newly queued right away rather than waiting for the
+  // once-a-minute drain to come round.
+  let push: unknown = 'skipped'
   if (taskReminders + guestReminders > 0) {
     try {
-      const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-whatsapp`, {
+      const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-push`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
@@ -127,11 +141,11 @@ Deno.serve(async (req: Request) => {
         },
         body: '{}',
       })
-      whatsapp = await response.json()
+      push = await response.json()
     } catch (error) {
-      whatsapp = { error: error instanceof Error ? error.message : String(error) }
+      push = { error: error instanceof Error ? error.message : String(error) }
     }
   }
 
-  return json({ taskReminders, guestReminders, whatsapp })
+  return json({ taskReminders, guestReminders, push })
 })

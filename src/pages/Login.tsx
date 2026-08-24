@@ -55,7 +55,7 @@ export function LoginPage() {
               ['🧳', 'Track arrivals with a live countdown and calendar reminders'],
               ['🍽️', 'Suggest dishes, the head approves, tasks assign themselves'],
               ['🛒', 'One consolidated shopping list for the driver'],
-              ['🔔', 'In-app and WhatsApp notifications at every step'],
+              ['🔔', 'Notifications on your phone at every step'],
             ].map(([icon, text]) => (
               <li key={text} className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-lg bg-white/15">

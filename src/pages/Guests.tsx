@@ -12,6 +12,7 @@ import {
   syncGuestToGoogleCalendar,
 } from '../lib/calendar'
 import { downloadCsv } from '../lib/export'
+import { guestMessage, shareToWhatsApp } from '../lib/whatsapp'
 import {
   Avatar,
   Badge,
@@ -732,6 +733,16 @@ function GuestCard({
           title="Download an .ics file with the reminder"
         >
           ⬇ .ics
+        </button>
+        <button
+          onClick={(event) => {
+            event.stopPropagation()
+            shareToWhatsApp(guestMessage(guest))
+          }}
+          className="rounded-lg bg-sand-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-200"
+          title="Open WhatsApp with these details ready to send"
+        >
+          💬 Share
         </button>
         <button
           onClick={onEdit}
