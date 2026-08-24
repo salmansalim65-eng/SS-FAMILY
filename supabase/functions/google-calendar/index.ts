@@ -15,6 +15,10 @@
 // With none of them set the function is a well-behaved no-op: it replies
 // { configured: false } and the app falls back to an "Add to Calendar" link
 // and an .ics download, so nothing in the product breaks.
+//
+// Every call logs a [cal] diagnostic line. It never prints secret values —
+// only which names are present, a masked calendar/event id, and whatever
+// error text Google returns. Read them with the Supabase logs explorer.
 // ---------------------------------------------------------------------------
 import { corsHeaders, json } from './cors.ts'
 
@@ -49,6 +53,12 @@ function addHours(time: string, hours: number): string {
   return `${String(end).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`
 }
 
+/** Shows enough of an id to recognise it without publishing it. */
+function mask(value: string): string {
+  if (value.length <= 8) return '***'
+  return `${value.slice(0, 4)}...${value.slice(-6)}`
+}
+
 async function accessToken(id: string, secret: string, refresh: string): Promise<string> {
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
@@ -76,7 +86,14 @@ Deno.serve(async (req: Request) => {
   const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN')
   const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') || 'primary'
 
-  if (!clientId || !clientSecret || !refreshToken) {
+  const missing = [
+    !clientId && 'GOOGLE_CLIENT_ID',
+    !clientSecret && 'GOOGLE_CLIENT_SECRET',
+    !refreshToken && 'GOOGLE_REFRESH_TOKEN',
+  ].filter(Boolean)
+
+  if (missing.length) {
+    console.log(`[cal] NOT CONFIGURED - missing: ${missing.join(', ')}`)
     return json({
       configured: false,
       message:
@@ -85,17 +102,21 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  console.log(`[cal] secrets present, calendar=${mask(calendarId)}`)
+
   let payload: Payload
   try {
     payload = await req.json()
   } catch {
+    console.log('[cal] bad JSON body')
     return json({ configured: true, error: 'Invalid JSON body' }, 400)
   }
 
   const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
 
   try {
-    const token = await accessToken(clientId, clientSecret, refreshToken)
+    const token = await accessToken(clientId!, clientSecret!, refreshToken!)
+    console.log('[cal] token exchange ok')
 
     // ------------------------------------------------------------- delete
     if (payload.action === 'delete') {
@@ -105,6 +126,7 @@ Deno.serve(async (req: Request) => {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
+      console.log(`[cal] delete -> ${response.status}`)
 
       // 404/410 mean it is already gone, which is the outcome we wanted.
       if (!response.ok && ![404, 410].includes(response.status)) {
@@ -115,6 +137,7 @@ Deno.serve(async (req: Request) => {
 
     // ------------------------------------------------------------- upsert
     if (!payload.summary || !payload.startDate) {
+      console.log('[cal] missing summary/startDate')
       return json({ configured: true, error: 'summary and startDate are required' }, 400)
     }
 
@@ -126,10 +149,7 @@ Deno.serve(async (req: Request) => {
     const timed = payload.guestType === 'dinner' && !!payload.startTime
     const when = timed
       ? {
-          start: {
-            dateTime: `${payload.startDate}T${payload.startTime}:00`,
-            timeZone,
-          },
+          start: { dateTime: `${payload.startDate}T${payload.startTime}:00`, timeZone },
           end: {
             dateTime: `${payload.startDate}T${addHours(
               payload.startTime!,
@@ -182,16 +202,22 @@ Deno.serve(async (req: Request) => {
     })
 
     const body = await response.json()
+
     if (!response.ok) {
+      console.log(
+        `[cal] ${method} -> ${response.status} REJECTED: ${body?.error?.message ?? 'unknown'}`,
+      )
       return json(
         {
           configured: true,
           error: body?.error?.message ?? 'Google Calendar rejected the event',
-          message: 'Could not save the calendar event.',
+          message: `Google rejected the event: ${body?.error?.message ?? 'unknown error'}`,
         },
         502,
       )
     }
+
+    console.log(`[cal] ${method} -> ok, eventId=${body.id ? mask(String(body.id)) : 'none'}`)
 
     return json({
       configured: true,
@@ -203,11 +229,13 @@ Deno.serve(async (req: Request) => {
           : `Added to Google Calendar with a ${reminderDays}-day reminder.`,
     })
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    console.log(`[cal] FAILED: ${detail}`)
     return json(
       {
         configured: true,
-        error: error instanceof Error ? error.message : String(error),
-        message: 'Could not reach Google Calendar.',
+        error: detail,
+        message: `Could not reach Google Calendar: ${detail}`,
       },
       502,
     )
