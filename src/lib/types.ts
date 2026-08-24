@@ -203,6 +203,8 @@ export interface Task {
   status: TaskStatus
   menu_item_id: string | null
   guest_id: string | null
+  /** Set when a stay plan generated this task; names the template it came from. */
+  stay_plan_key: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -210,6 +212,43 @@ export interface Task {
   assignee?: Pick<AppUser, 'id' | 'name'> | null
   guest?: Pick<Guest, 'id' | 'name'> | null
 }
+
+/** One line of the hospitality plan for a guest who stays with us. */
+export interface StayPlanTemplate {
+  id: string
+  key: string
+  title: string
+  description: string | null
+  phase: StayPhase
+  /** `before`: days ahead of arrival · `after`: days past departure. */
+  offset_days: number
+  /** `periodic`: repeat every N days of the stay. */
+  every_days: number
+  /** Skip the whole item for visits shorter than this. */
+  min_nights: number
+  priority: Priority
+  default_assignee: string | null
+  sort_order: number
+  is_active: boolean
+  assignee?: Pick<AppUser, 'id' | 'name'> | null
+}
+
+export type StayPhase = 'before' | 'arrival' | 'daily' | 'periodic' | 'departure' | 'after'
+
+export const STAY_PHASES: { key: StayPhase; label: string; icon: string; blurb: string }[] = [
+  { key: 'before', label: 'Before they arrive', icon: '🧹',
+    blurb: 'The room, the bathroom, the snack bar — done before anyone walks in.' },
+  { key: 'arrival', label: 'The day they arrive', icon: '🤝',
+    blurb: 'Welcome them properly.' },
+  { key: 'daily', label: 'Every day of the stay', icon: '🍽️',
+    blurb: 'Meals, tidying, and keeping the water and snacks topped up.' },
+  { key: 'periodic', label: 'Every few days', icon: '🧺',
+    blurb: 'Towels, laundry and bed linen, on their own rhythm.' },
+  { key: 'departure', label: 'The day they leave', icon: '👋',
+    blurb: 'Send them off well.' },
+  { key: 'after', label: 'After they go', icon: '🔄',
+    blurb: 'Reset the room so the next visit starts from a full cupboard.' },
+]
 
 export interface ShoppingItem {
   id: string

@@ -13,6 +13,8 @@ import {
 } from '../lib/calendar'
 import { downloadCsv } from '../lib/export'
 import { guestMessage, shareToWhatsApp } from '../lib/whatsapp'
+import { StayPlanEditor } from '../components/StayPlanEditor'
+import { GuestStayPlan } from '../components/GuestStayPlan'
 import {
   Avatar,
   Badge,
@@ -33,7 +35,7 @@ import type { Guest, GuestType } from '../lib/types'
 
 type When = 'upcoming' | 'current' | 'past' | 'all'
 type Kind = 'all' | GuestType
-type Mode = 'upcoming' | 'history'
+type Mode = 'upcoming' | 'history' | 'plan'
 
 const EMPTY = {
   guest_type: 'staying' as GuestType,
@@ -61,6 +63,9 @@ export function GuestsPage() {
   const [when, setWhen] = useState<When>('upcoming')
   const [kind, setKind] = useState<Kind>('all')
   const [mode, setMode] = useState<Mode>('upcoming')
+  /** The visit whose hospitality checklist is open. */
+  const [planFor, setPlanFor] = useState<Guest | null>(null)
+  const [planProgress, setPlanProgress] = useState<Record<string, { done: number; total: number }>>({})
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Guest | null>(null)
@@ -72,16 +77,36 @@ export function GuestsPage() {
   useEffect(() => {
     let active = true
     setLoading(true)
-    supabase
-      .from('guests')
-      .select('*, creator:users!guests_created_by_fkey(id, name)')
-      .order('arrival_date')
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) toast.error(errorMessage(error))
-        setGuests((data ?? []) as unknown as Guest[])
-        setLoading(false)
-      })
+
+    const load = async () => {
+      const [guestRes, planRes] = await Promise.all([
+        supabase
+          .from('guests')
+          .select('*, creator:users!guests_created_by_fkey(id, name)')
+          .order('arrival_date'),
+        // Just enough of each plan to put "9 / 56" on the card.
+        supabase.from('tasks').select('guest_id, status').not('stay_plan_key', 'is', null),
+      ])
+
+      if (!active) return
+      if (guestRes.error) toast.error(errorMessage(guestRes.error))
+      setGuests((guestRes.data ?? []) as unknown as Guest[])
+
+      const counts: Record<string, { done: number; total: number }> = {}
+      for (const row of (planRes.data ?? []) as unknown as {
+        guest_id: string
+        status: string
+      }[]) {
+        const entry = counts[row.guest_id] ?? { done: 0, total: 0 }
+        entry.total += 1
+        if (row.status === 'completed') entry.done += 1
+        counts[row.guest_id] = entry
+      }
+      setPlanProgress(counts)
+      setLoading(false)
+    }
+
+    void load()
     return () => {
       active = false
     }
@@ -296,7 +321,13 @@ export function GuestsPage() {
 
       {/* --------------------------------------------------------- mode tabs */}
       <div className="mb-4 flex rounded-xl bg-sand-100 p-1">
-        {([['upcoming', '🧳 Visits'], ['history', '📖 History']] as [Mode, string][]).map(
+        {(
+          [
+            ['upcoming', '🧳 Visits'],
+            ['history', '📖 History'],
+            ['plan', '🏠 Stay plan'],
+          ] as [Mode, string][]
+        ).map(
           ([key, label]) => (
             <button
               key={key}
@@ -313,6 +344,8 @@ export function GuestsPage() {
 
       {mode === 'history' ? (
         <GuestHistory />
+      ) : mode === 'plan' ? (
+        <StayPlanEditor />
       ) : (
         <>
       {/* ------------------------------------------------------- category tabs */}
@@ -390,6 +423,8 @@ export function GuestsPage() {
               canDelete={isHead}
               onEdit={() => openEdit(guest)}
               onDelete={() => setDeleting(guest)}
+              onOpenPlan={() => setPlanFor(guest)}
+              plan={planProgress[guest.id]}
             />
           ))}
         </div>
@@ -584,6 +619,21 @@ export function GuestsPage() {
         </form>
       </Modal>
 
+      {/* ---------------------------------------------------- one stay's plan */}
+      <Modal
+        open={planFor !== null}
+        onClose={() => setPlanFor(null)}
+        title={`Stay plan — ${planFor?.name ?? ''}`}
+        wide
+        footer={
+          <Button variant="secondary" onClick={() => setPlanFor(null)}>
+            Close
+          </Button>
+        }
+      >
+        {planFor && <GuestStayPlan guest={planFor} onChanged={reload} />}
+      </Modal>
+
       <ConfirmDialog
         open={deleting !== null}
         title="Remove guest"
@@ -605,11 +655,15 @@ function GuestCard({
   canDelete,
   onEdit,
   onDelete,
+  onOpenPlan,
+  plan,
 }: {
   guest: Guest
   canDelete: boolean
   onEdit: () => void
   onDelete: () => void
+  onOpenPlan: () => void
+  plan?: { done: number; total: number }
 }) {
   const isDinner = guest.guest_type === 'dinner'
   const days = daysFromToday(guest.arrival_date)
@@ -744,6 +798,18 @@ function GuestCard({
         >
           💬 Share
         </button>
+        {guest.guest_type === 'staying' && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenPlan()
+            }}
+            className="rounded-lg bg-palm-100 px-3 py-1.5 text-xs font-bold text-palm-800 transition hover:bg-palm-200"
+            title="Everything that has to happen for this stay"
+          >
+            🏠 Plan{plan ? ` ${plan.done}/${plan.total}` : ''}
+          </button>
+        )}
         <button
           onClick={onEdit}
           className="rounded-lg bg-sand-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-sand-200"

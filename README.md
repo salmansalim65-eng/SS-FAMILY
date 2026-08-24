@@ -163,7 +163,45 @@ different errands, so they stay two lines. Same item, same shop, same unit becom
 The add-item form also warns about near-duplicates while you type, using trigram
 similarity — typing `chiken` finds the existing `Chicken` entries.
 
-### 4 · The grocery list
+### 4 · The stay plan
+
+A dinner guest needs a menu. A guest who moves in for a week needs rather more, and
+remembering all of it every time is how things get missed. So adding a **staying**
+guest lays the whole visit out as dated tasks — a plan the household edits once and
+then simply follows.
+
+```
+🧹 Before they arrive   deep clean · fresh linen · towels and toiletries
+                        snack bar · room check (AC, WiFi, iron, prayer mat)
+                        confirm the pickup · plan the menu
+🤝 Arrival day          welcome tray of dates and qahwa · show them around
+🍽️ Every day            breakfast · lunch · dinner · tidy the room · refill water
+🧺 Every few days       fresh towels (2) · laundry (3) · change the linen (4)
+👋 Departure day        pack snacks for the journey · check for forgotten things
+                        farewell gift · drop them to the airport
+🔄 After they go        strip the beds · reset the room for next time
+```
+
+Three details make it usable rather than overwhelming:
+
+- **One notification, not sixty.** A week-long stay is around 60 tasks. Creating them
+  sets a flag that stands the per-task assignment notice down, and a single summary
+  goes out instead.
+- **Nothing repeats pointlessly.** Laundry starts three days *in*, not on arrival day
+  when it was just done; a one-night visit skips laundry and linen changes entirely.
+- **Editing dates rebuilds, never duplicates.** Change the departure date and the plan
+  reshapes around it — but any job already marked done is left exactly as it is.
+
+**Guests → Stay plan** is where the household's standard lives: turn items off, add
+your own, and say who normally does each one so they are assigned the moment a guest
+is added. Each staying guest's card then carries its own progress — `🏠 Stay plan
+9/56` — and opens day by day, so it is obvious at a glance whether tomorrow is
+covered.
+
+Cancel the visit, or turn it into a dinner, and the outstanding work disappears with
+it.
+
+### 5 · The grocery list
 
 Family members do not have to type anything. The **Grocery** tab shows the standing
 catalogue — 98 items across 12 categories — and you tick what you need:
@@ -179,7 +217,7 @@ from Bindawood, chicken from Panda — which you can change per item before send
 Missing something? "+ Add item" still takes a free-text entry, and the head can add it
 to the catalogue for next time.
 
-### 5 · Reminders
+### 6 · Reminders
 
 The `reminders` edge function notifies assignees **1 day before** a task is due, the
 family **3 days before** a staying guest arrives and **1 day before** a dinner guest.
@@ -193,7 +231,7 @@ select jobname, schedule, active from cron.job;
 select status_code, content from net._http_response order by id desc limit 5;
 ```
 
-### 6 · Guest history
+### 7 · Guest history
 
 Every visit stays in `guests`. `guest_profiles` is the rolled-up record of one guest
 across all of them — how often they have come, how many nights, the room they usually
@@ -203,7 +241,7 @@ One field is deliberately **not** derived: `notes`. That is where the family wri
 what it has learned ("prefers the ground-floor room", "no chilli"), and the sync never
 touches it. Open **Guests → History** to read it before the next visit.
 
-### 7 · Recurring chores
+### 8 · Recurring chores
 
 A chore is a template, not a task: title, assignee, priority, and a frequency of
 daily, weekly (pick the weekday) or monthly (pick the day, 1–28, so it never skips a
@@ -224,7 +262,8 @@ src/
                   Notifications, Activity, Settings
   components/     Layout (sidebar + mobile bottom nav), NotificationBell, ui.tsx,
                   GroceryPicker, BasketPanel, DriverList, GuestHistory,
-                  ChoresPanel, PushPanel, ShareButton, ErrorBoundary
+                  StayPlanEditor, GuestStayPlan, ChoresPanel, PushPanel,
+                  ShareButton, ErrorBoundary
   context/        AuthContext (session + role), ToastContext
   lib/            supabase client, types, formatting + colour coding,
                   Google Calendar / .ics, CSV export, web push, WhatsApp links
@@ -233,6 +272,7 @@ supabase/
   migrations/     schema → logic → security → hardening → username accounts
                   → guest types → reminders cron → guest profiles
                   → recurring chores → grocery catalogue → web push
+                  → approvals and baskets → stay plan
   functions/      admin-users, google-calendar, send-push, reminders
   seed.sql        bootstrap the ss head-of-family account
 ```
@@ -244,7 +284,8 @@ supabase/
 | `users` | profile mirrored from `auth.users`: username, relation, role, menu approver |
 | `guests` | visits, with male/female counts, room, special needs, calendar event id |
 | `menu_items` | dish, status workflow, cook, homemade/outside, quantity, cost |
-| `tasks` | manual and menu-generated, priority, due date, status |
+| `tasks` | manual, menu-generated and stay-plan tasks: priority, due date, status |
+| `stay_plan_templates` | what the household always does for a guest who sleeps here |
 | `shopping_list` | one row per request: which shop, and `submitted_at` once sent |
 | `grocery_catalogue` | the standing tick-list, by category, with default quantities |
 | `guest_profiles` | one row per guest: visit counts, nights, remembered preferences |
