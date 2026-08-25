@@ -74,14 +74,9 @@ export function App() {
             </RequireRole>
           }
         />
-        <Route
-          path="tasks"
-          element={
-            <RequireRole roles={family}>
-              <TasksPage />
-            </RequireRole>
-          }
-        />
+        {/* A driver reaches Tasks too — row level security shows them only the
+            ones assigned to them, which is how Haram pick & drop lands. */}
+        <Route path="tasks" element={<TasksPage />} />
         <Route path="shopping" element={<ShoppingPage />} />
         <Route
           path="activity"

@@ -24,6 +24,7 @@ export function useUsers() {
     }
   }, [])
 
+  /** Who can be put down to cook or buy a dish — not the driver. */
   const cooks = users.filter((u) => u.role === 'head' || u.role === 'member')
   return { users, cooks, loading }
 }

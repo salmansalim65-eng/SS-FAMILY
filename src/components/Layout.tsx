@@ -16,7 +16,7 @@ const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: '🏠', roles: ['head', 'member'] },
   { to: '/guests', label: 'Guests', icon: '🧳', roles: ['head', 'member'] },
   { to: '/menu', label: 'Menu', icon: '🍽️', roles: ['head', 'member'] },
-  { to: '/tasks', label: 'Tasks', icon: '✅', roles: ['head', 'member'] },
+  { to: '/tasks', label: 'Tasks', icon: '✅', roles: ['head', 'member', 'driver'] },
   { to: '/shopping', label: 'Shopping', icon: '🛒', roles: ['head', 'member', 'driver'] },
   { to: '/activity', label: 'Activity', icon: '📜', roles: ['head', 'member'] },
 ]

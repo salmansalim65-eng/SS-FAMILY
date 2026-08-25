@@ -48,7 +48,7 @@ const EMPTY = {
 }
 
 export function TasksPage() {
-  const { profile, isHead } = useAuth()
+  const { profile, isHead, isDriver } = useAuth()
   const toast = useToast()
   const { cooks } = useUsers()
   const [tick, reload] = useReload()
@@ -216,7 +216,9 @@ export function TasksPage() {
     <div className="mx-auto max-w-5xl">
       <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-800">Tasks</h1>
+          <h1 className="text-2xl font-extrabold text-slate-800">
+            {isDriver ? 'My jobs' : 'Tasks'}
+          </h1>
           <p className="text-sm text-slate-500">
             {counts.open} open
             {counts.overdue > 0 && (
@@ -227,6 +229,7 @@ export function TasksPage() {
         {isHead && <Button onClick={openCreate}>+ New task</Button>}
       </header>
 
+      {!isDriver && (
       <div className="mb-4 flex rounded-xl bg-sand-100 p-1">
         {([['tasks', '✅ Tasks'], ['chores', '🔁 Recurring chores']] as [Mode, string][]).map(
           ([key, label]) => (
@@ -242,8 +245,9 @@ export function TasksPage() {
           ),
         )}
       </div>
+      )}
 
-      {mode === 'chores' ? (
+      {mode === 'chores' && !isDriver ? (
         <ChoresPanel />
       ) : (
         <>

@@ -65,7 +65,8 @@ but can see and do nothing.
 
 | | Head of Family | Family Member | Driver |
 | --- | :---: | :---: | :---: |
-| Dashboard, guests, menu, tasks | ✅ full | ✅ view + suggest | ❌ |
+| Dashboard, guests, menu | ✅ full | ✅ view + suggest | ❌ |
+| Tasks | ✅ all | ✅ all | only their own |
 | Approve / reject menu items | ✅ | only if ticked | ❌ |
 | Their own dish needs approval | no | yes, unless ticked | — |
 | Create & assign tasks | ✅ | ❌ | ❌ |
@@ -175,6 +176,7 @@ then simply follows.
                         snack bar · room check (AC, WiFi, iron, prayer mat)
                         confirm the pickup · plan the menu
 🤝 Arrival day          welcome tray of dates and qahwa · show them around
+🕌 Every day            Haram pick & drop (Masjid an-Nabawi)
 🍽️ Every day            breakfast · lunch · dinner · evening tea and something
                         sweet · tidy the room · refill water
 🧺 Every few days       fresh towels (2) · laundry (3) · change the linen (4)
@@ -192,6 +194,11 @@ Three details make it usable rather than overwhelming:
   when it was just done; a one-night visit skips laundry and linen changes entirely.
 - **Editing dates rebuilds, never duplicates.** Change the departure date and the plan
   reshapes around it — but any job already marked done is left exactly as it is.
+
+The Haram run leads the daily list, because for a guest in Madinah it is the
+point of the visit. It is the driver's job, so a driver can now reach Tasks and
+see the ones assigned to them — and nothing else: no guest list, no menu, no
+household chores.
 
 **Guests → Stay plan** is where the household's standard lives: turn items off, add
 your own, and say who normally does each one so they are assigned the moment a guest

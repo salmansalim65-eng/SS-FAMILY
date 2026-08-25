@@ -48,7 +48,9 @@ function timing(t: StayPlanTemplate): string {
 export function StayPlanEditor() {
   const { isHead } = useAuth()
   const toast = useToast()
-  const { cooks } = useUsers()
+  // A stay-plan job can land on anyone: the Haram run and the airport drop
+  // are the driver's, not the cook's.
+  const { users } = useUsers()
 
   const [rows, setRows] = useState<StayPlanTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -242,14 +244,14 @@ export function StayPlanEditor() {
                           onChange={(e) =>
                             void patch(row, {
                               default_assignee: e.target.value || null,
-                              assignee: cooks.find((u) => u.id === e.target.value) ?? null,
+                              assignee: users.find((u) => u.id === e.target.value) ?? null,
                             })
                           }
                           className="w-36"
                           aria-label={`Who does ${row.title}`}
                         >
                           <option value="">Decide later</option>
-                          {cooks.map((u) => (
+                          {users.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.name}
                             </option>
@@ -393,7 +395,7 @@ export function StayPlanEditor() {
               onChange={(e) => setForm({ ...form, default_assignee: e.target.value })}
             >
               <option value="">Decide later</option>
-              {cooks.map((u) => (
+              {users.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
                 </option>

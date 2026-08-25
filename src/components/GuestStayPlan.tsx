@@ -52,7 +52,8 @@ export function GuestStayPlan({ guest, onChanged }: { guest: Guest; onChanged?: 
         .not('stay_plan_key', 'is', null)
         .order('due_date')
         .order('priority'),
-      supabase.from('users').select('*').in('role', ['head', 'member']).eq('is_active', true),
+      // Includes the driver: the Haram run and the airport drop are theirs.
+      supabase.from('users').select('*').eq('is_active', true).order('name'),
     ])
 
     if (taskRes.error) toast.error(errorMessage(taskRes.error))
