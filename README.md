@@ -8,6 +8,9 @@ Built on **React + Vite + TypeScript + Tailwind** with **Supabase** (Postgres, A
 Row Level Security, Edge Functions) as the backend. Not a mockup — every screen reads
 and writes a live database, and the workflow rules are enforced in the database itself.
 
+> **Personal dashboard:** the `dashboard/` folder holds a separate Next.js app —
+> a home screen for all projects. See [`dashboard/README.md`](dashboard/README.md).
+
 ---
 
 ## Quick start
