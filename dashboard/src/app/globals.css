@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --surface-2: #f0f2f7;
+  --line: #e3e6ee;
+  --fg: #141824;
+  --muted: #667085;
+  --accent: #4f46e5;
+  --up: #15803d;
+  --down: #b91c1c;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0d1017;
+  --surface: #161a23;
+  --surface-2: #1e2330;
+  --line: #2a3040;
+  --fg: #eef0f5;
+  --muted: #98a2b3;
+  --accent: #818cf8;
+  --up: #4ade80;
+  --down: #f87171;
+  --danger: #fda29b;
+  --danger-soft: #3b1715;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-tap-highlight-color: transparent;
+}

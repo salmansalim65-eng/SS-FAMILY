@@ -1,0 +1,51 @@
+import { AppGrid } from "@/components/app-icon";
+import { CalendarEmbed } from "@/components/calendar-embed";
+import { Header } from "@/components/header";
+import { Reports, type CardMeta } from "@/components/reports";
+import { Section } from "@/components/section";
+import { getApps, getCards, getSettings } from "@/lib/data";
+import { requireOwner } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const { supabase } = await requireOwner();
+  const [apps, cards, settings] = await Promise.all([
+    getApps(supabase, { activeOnly: true }),
+    getCards(supabase, { activeOnly: true }),
+    getSettings(supabase),
+  ]);
+
+  const projects = apps.filter((a) => a.category === "project");
+  const personal = apps.filter((a) => a.category === "personal");
+  const color = Object.fromEntries(projects.map((a) => [a.name.toUpperCase(), a.color]));
+  const cardMeta: CardMeta[] = cards.map(({ id, project, title, format, higher_is_better }) => ({
+    id,
+    project,
+    title,
+    format,
+    higher_is_better,
+  }));
+
+  return (
+    <main className="mx-auto max-w-6xl space-y-10 px-4 py-6 sm:px-6 sm:py-10">
+      <Header name={settings.display_name} />
+
+      <Section title="My Projects">
+        <AppGrid apps={projects} />
+      </Section>
+
+      <Reports cards={cardMeta} currency={settings.currency} color={color} order={projects.map((a) => a.name.toUpperCase())} />
+
+      <Section title="Personal">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+            <AppGrid apps={personal} compact />
+          </div>
+          <CalendarEmbed src={settings.google_calendar_embed_url} />
+        </div>
+      </Section>
+    </main>
+  );
+}
+
