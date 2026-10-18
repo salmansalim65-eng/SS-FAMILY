@@ -121,19 +121,19 @@ npm run dev                    # http://localhost:3000
      `security definer` functions if you're unsure.
 2. Set `RMI_SUPABASE_URL` and `RMI_SUPABASE_ANON_KEY` (or
    `RMI_SUPABASE_SERVICE_ROLE_KEY`).
-3. Open **Settings → Report cards** and fix each RMI card's table and column
-   names to match the real RMI schema. The seeded guesses are:
+3. Run `supabase/project-examples/rmi_dashboard_metrics.sql` **in the RMI
+   project**, store the hash of a long random secret in `home_dashboard_key`
+   as that file explains, and set `RMI_DASHBOARD_KEY` to the secret itself.
+   RMI's tables are all behind RLS and its anon key is public, so the cards
+   call these key-guarded functions instead of reading tables:
 
-   | Card | Type | Table / function | Column(s) | Period |
-   | --- | --- | --- | --- | --- |
-   | Total students | count | `students` (status = active) | date: `created_at` | all |
-   | Fee collected today | sum | `fee_payments` | `amount`, date: `paid_on` | today |
-   | Pending dues | sum | `fee_invoices` (balance > 0) | `balance` | all |
-   | Low-stock items | rpc | `dashboard_low_stock_count` | — | — |
-   | Payroll this month | sum | `payroll` | `net_pay`, date: `pay_date` | this month |
-
-4. For low stock, run `supabase/project-examples/rmi_low_stock.sql` **in the
-   RMI project** after adjusting its table names.
+   | Card | Function | What it counts |
+   | --- | --- | --- |
+   | Total students | `home_dashboard_students` | `student_profiles` enrolled today, vs start of month |
+   | Fee collected today | `home_dashboard_fee_today` | `voucher.fee_receipt` credits to student accounts today, vs same day last month |
+   | Pending dues | `home_dashboard_pending_dues` | positive student ledger balances, vs start of month |
+   | Out-of-stock items | `home_dashboard_out_of_stock` | stocked products with nothing on hand (RMI has no reorder level) |
+   | Payroll this month | `home_dashboard_payroll` | `payroll_results.net` this month, vs last month |
 
 ### How a card is computed
 

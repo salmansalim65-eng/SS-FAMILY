@@ -15,8 +15,8 @@ select * from (values
 ) as v(name, url, icon, color, category, sort_order)
 where not exists (select 1 from public.dashboard_apps);
 
--- RMI: real queries. The table and column names below are a best guess —
--- change them in Settings → Report cards to match the RMI schema.
+-- RMI: key-guarded functions from project-examples/rmi_dashboard_metrics.sql,
+-- called with RMI_DASHBOARD_KEY.
 -- MBL / SSA / VISTA: placeholders with sample numbers.
 -- SS_FAMILY: live, through key-guarded functions in the SS Family project.
 -- TODO: switch each placeholder to query_type 'count' / 'sum' / 'rpc' and
@@ -25,11 +25,11 @@ where not exists (select 1 from public.dashboard_apps);
 insert into public.dashboard_cards
   (project, title, query_type, table_name, value_column, date_column, date_range, filter, format, sample_value, sample_previous, higher_is_better, sort_order)
 select * from (values
-  ('RMI',   'Total students',          'count',       'students',      null,         'created_at', 'all',        '[{"column":"status","op":"eq","value":"active"}]'::jsonb, 'number',   null::numeric, null::numeric, true::boolean, 10),
-  ('RMI',   'Fee collected today',     'sum',         'fee_payments',  'amount',     'paid_on',    'today',      '[]'::jsonb,                                               'currency', null, null, true, 20),
-  ('RMI',   'Pending dues',            'sum',         'fee_invoices',  'balance',    null,         'all',        '[{"column":"balance","op":"gt","value":0}]'::jsonb,       'currency', null, null, false, 30),
-  ('RMI',   'Low-stock items',         'rpc',         'dashboard_low_stock_count', null, null,     'all',        '[]'::jsonb,                                               'number',   null, null, false, 40),
-  ('RMI',   'Payroll this month',      'sum',         'payroll',       'net_pay',    'pay_date',   'this_month', '[]'::jsonb,                                               'currency', null, null, true, 50),
+  ('RMI',   'Total students',          'rpc', 'home_dashboard_students',     null, null, 'all', '[]'::jsonb, 'number',   null::numeric, null::numeric, true::boolean, 10),
+  ('RMI',   'Fee collected today',     'rpc', 'home_dashboard_fee_today',    null, null, 'all', '[]'::jsonb, 'currency', null, null, true,  20),
+  ('RMI',   'Pending dues',            'rpc', 'home_dashboard_pending_dues', null, null, 'all', '[]'::jsonb, 'currency', null, null, false, 30),
+  ('RMI',   'Out-of-stock items',      'rpc', 'home_dashboard_out_of_stock', null, null, 'all', '[]'::jsonb, 'number',   null, null, false, 40),
+  ('RMI',   'Payroll this month',      'rpc', 'home_dashboard_payroll',      null, null, 'all', '[]'::jsonb, 'currency', null, null, true,  50),
 
   ('MBL',   'Active customers',        'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   1240,   1180, true, 10),
   ('MBL',   'Revenue this month',      'placeholder', null, null, null, 'all', '[]'::jsonb, 'currency', 845000, 790000, true, 20),
