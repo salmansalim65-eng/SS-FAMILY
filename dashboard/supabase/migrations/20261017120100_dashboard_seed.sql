@@ -15,9 +15,9 @@ select * from (values
 ) as v(name, url, icon, color, category, sort_order)
 where not exists (select 1 from public.dashboard_apps);
 
--- RMI: key-guarded functions from project-examples/rmi_dashboard_metrics.sql,
--- called with RMI_DASHBOARD_KEY.
--- MBL / SSA / VISTA: placeholders with sample numbers.
+-- RMI / MBL / SSA: key-guarded functions from
+-- project-examples/<project>_dashboard_metrics.sql, called with <PROJECT>_DASHBOARD_KEY.
+-- VISTA: placeholders with sample numbers.
 -- SS_FAMILY: live, through key-guarded functions in the SS Family project.
 -- TODO: switch each placeholder to query_type 'count' / 'sum' / 'rpc' and
 --       fill in table_name, value_column, date_column and filter once the
@@ -31,13 +31,15 @@ select * from (values
   ('RMI',   'Out-of-stock items',      'rpc', 'home_dashboard_out_of_stock', null, null, 'all', '[]'::jsonb, 'number',   null, null, false, 40),
   ('RMI',   'Payroll this month',      'rpc', 'home_dashboard_payroll',      null, null, 'all', '[]'::jsonb, 'currency', null, null, true,  50),
 
-  ('MBL',   'Active customers',        'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   1240,   1180, true, 10),
-  ('MBL',   'Revenue this month',      'placeholder', null, null, null, 'all', '[]'::jsonb, 'currency', 845000, 790000, true, 20),
-  ('MBL',   'Open orders',             'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   37,     42, true, 30),
+  ('MBL',   'Sales this month',        'rpc', 'home_dashboard_sales_month',          null, null, 'all', '[]'::jsonb, 'currency', null, null, true,  10),
+  ('MBL',   'Receivables',             'rpc', 'home_dashboard_receivables',          null, null, 'all', '[]'::jsonb, 'currency', null, null, false, 20),
+  ('MBL',   'Cash & bank',             'rpc', 'home_dashboard_cash_bank',            null, null, 'all', '[]'::jsonb, 'currency', null, null, true,  30),
+  ('MBL',   'Awaiting approval',       'rpc', 'home_dashboard_pending_docs',         null, null, 'all', '[]'::jsonb, 'number',   null, null, false, 40),
 
-  ('SSA',   'Members',                 'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   312,    298, true, 10),
-  ('SSA',   'Collections this month',  'placeholder', null, null, null, 'all', '[]'::jsonb, 'currency', 156000, 171000, true, 20),
-  ('SSA',   'Pending approvals',       'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   9,      14, false, 30),
+  ('SSA',   'Rental properties',       'rpc', 'home_dashboard_properties',           null, null, 'all', '[]'::jsonb, 'number',   null, null, true,  10),
+  ('SSA',   'Active leases',           'rpc', 'home_dashboard_active_leases',        null, null, 'all', '[]'::jsonb, 'number',   null, null, true,  20),
+  ('SSA',   'Rent outstanding (AED)',  'rpc', 'home_dashboard_rent_outstanding_aed', null, null, 'all', '[]'::jsonb, 'number',   null, null, false, 30),
+  ('SSA',   'Rent outstanding (PKR)',  'rpc', 'home_dashboard_rent_outstanding_pkr', null, null, 'all', '[]'::jsonb, 'currency', null, null, false, 40),
 
   ('VISTA', 'Active projects',         'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   18,     16, true, 10),
   ('VISTA', 'Invoiced this month',     'placeholder', null, null, null, 'all', '[]'::jsonb, 'currency', 1250000, 980000, true, 20),

@@ -156,7 +156,13 @@ and sets what the trend compares against:
 Need anything fancier (joins, column-vs-column)? Write a function in that
 project and use `rpc`.
 
-MBL, SSA and VISTA start as placeholders. **TODO** for each: set its
+MBL and SSA work the same way as RMI: run
+`project-examples/mbl_dashboard_metrics.sql` / `ssa_dashboard_metrics.sql` in
+that project, store a secret's hash, and set `<PROJECT>_SUPABASE_URL`,
+`<PROJECT>_SUPABASE_ANON_KEY` and `<PROJECT>_DASHBOARD_KEY`. SSA's leases and
+invoices are in AED and PKR, so outstanding rent has one card per currency.
+
+VISTA starts as placeholders. **TODO**: set its
 `<PROJECT>_SUPABASE_URL` / key, then edit its cards in Settings to `count`,
 `sum` or `rpc` with the real table names. To add a new project, add its icon,
 add cards with the new project key (e.g. `ACME`) and set `ACME_SUPABASE_URL` +
