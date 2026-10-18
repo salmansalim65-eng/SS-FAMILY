@@ -18,7 +18,9 @@ export default async function Home() {
 
   const projects = apps.filter((a) => a.category === "project");
   const personal = apps.filter((a) => a.category === "personal");
-  const color = Object.fromEntries(projects.map((a) => [a.name.toUpperCase(), a.color]));
+  // Cards name their project by key ("SS_FAMILY"); match icons by the same rule.
+  const projectKey = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  const color = Object.fromEntries(apps.map((a) => [projectKey(a.name), a.color]));
   const cardMeta: CardMeta[] = cards.map(({ id, project, title, format, higher_is_better }) => ({
     id,
     project,
@@ -35,7 +37,7 @@ export default async function Home() {
         <AppGrid apps={projects} />
       </Section>
 
-      <Reports cards={cardMeta} currency={settings.currency} color={color} order={projects.map((a) => a.name.toUpperCase())} />
+      <Reports cards={cardMeta} currency={settings.currency} color={color} order={[...projects, ...personal].map((a) => projectKey(a.name))} />
 
       <Section title="Personal">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">

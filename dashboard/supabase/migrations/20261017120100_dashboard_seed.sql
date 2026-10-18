@@ -18,6 +18,7 @@ where not exists (select 1 from public.dashboard_apps);
 -- RMI: real queries. The table and column names below are a best guess —
 -- change them in Settings → Report cards to match the RMI schema.
 -- MBL / SSA / VISTA: placeholders with sample numbers.
+-- SS_FAMILY: live, through key-guarded functions in the SS Family project.
 -- TODO: switch each placeholder to query_type 'count' / 'sum' / 'rpc' and
 --       fill in table_name, value_column, date_column and filter once the
 --       real tables are known.
@@ -40,7 +41,14 @@ select * from (values
 
   ('VISTA', 'Active projects',         'placeholder', null, null, null, 'all', '[]'::jsonb, 'number',   18,     16, true, 10),
   ('VISTA', 'Invoiced this month',     'placeholder', null, null, null, 'all', '[]'::jsonb, 'currency', 1250000, 980000, true, 20),
-  ('VISTA', 'Completion rate',         'placeholder', null, null, null, 'all', '[]'::jsonb, 'percent',  76,     71, true, 30)
+  ('VISTA', 'Completion rate',         'placeholder', null, null, null, 'all', '[]'::jsonb, 'percent',  76,     71, true, 30),
+
+  -- SS Family: functions from the SS Family repo's 20261018090000_home_dashboard_metrics.sql,
+  -- called with SS_FAMILY_DASHBOARD_KEY.
+  ('SS_FAMILY', 'Guests at home today',  'rpc', 'home_dashboard_guests_now',      null, null, 'all', '[]'::jsonb, 'number', null, null, true,  10),
+  ('SS_FAMILY', 'Visits next 30 days',   'rpc', 'home_dashboard_upcoming_visits', null, null, 'all', '[]'::jsonb, 'number', null, null, true,  20),
+  ('SS_FAMILY', 'Open tasks',            'rpc', 'home_dashboard_open_tasks',      null, null, 'all', '[]'::jsonb, 'number', null, null, false, 30),
+  ('SS_FAMILY', 'Dishes awaiting approval', 'rpc', 'home_dashboard_menu_pending', null, null, 'all', '[]'::jsonb, 'number', null, null, false, 40)
 ) as v(project, title, query_type, table_name, value_column, date_column, date_range, filter, format, sample_value, sample_previous, higher_is_better, sort_order)
 where not exists (select 1 from public.dashboard_cards);
 

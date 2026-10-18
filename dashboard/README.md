@@ -56,10 +56,13 @@ dashboard/
 
 ### 1. Create the dashboard's Supabase project
 
-Use a **new** Supabase project for the dashboard (keeps it apart from the SS
-Family database and its username logins).
+The dashboard's tables can live in a project of their own or in the `public`
+schema of an existing project whose own data lives elsewhere. Either way the
+project's Auth is used for the login, so don't change its Site URL or email
+templates if another app depends on them — just add the dashboard's
+`/auth/callback` to its Redirect URLs.
 
-1. supabase.com → New project.
+1. Pick or create the project.
 2. **SQL Editor** → run, in order:
    - `supabase/migrations/20261017120000_dashboard_core.sql`
    - `supabase/migrations/20261017120100_dashboard_seed.sql`
@@ -70,13 +73,13 @@ Family database and its username logins).
 4. **Authentication → Users → Add user → Send invitation** (or "Create new
    user") with the same email. Sign-ups are never allowed from the app, so the
    user must exist first.
-5. **Authentication → Sign In / Providers → Email**: enable Email. You can turn
-   **Allow new users to sign up** off.
+5. **Authentication → Sign In / Providers → Email**: enable Email. In a project
+   of its own you can turn **Allow new users to sign up** off.
 6. **Authentication → URL Configuration**:
-   - Site URL: `https://your-dashboard.vercel.app`
+   - Site URL (own project only): `https://your-dashboard.vercel.app`
    - Redirect URLs: add `https://your-dashboard.vercel.app/auth/callback` and
      `http://localhost:3000/auth/callback`
-7. *(Recommended)* **Authentication → Emails → Magic Link** template — make the
+7. *(Own project only, recommended)* **Authentication → Emails → Magic Link** template — make the
    link work on any device and include the code:
    ```html
    <h2>Sign in to My Dashboard</h2>
@@ -148,7 +151,31 @@ MBL, SSA and VISTA start as placeholders. **TODO** for each: set its
 add cards with the new project key (e.g. `ACME`) and set `ACME_SUPABASE_URL` +
 `ACME_SUPABASE_ANON_KEY`. No code changes.
 
-### 4. Google Calendar (Phase 1)
+### 4. Connect SS Family
+
+SS Family's tables only answer signed-in family members, and its anon key is
+public (it ships in the SS Family web app). So its cards call four functions
+that also require a shared secret:
+
+1. In the **SS Family** Supabase project, run
+   `supabase/migrations/20261018090000_home_dashboard_metrics.sql` from the
+   repo root (or `supabase db push`).
+2. Pick a long random secret and store its hash there (SQL editor):
+   ```sql
+   insert into public.home_dashboard_key (key_hash)
+   values (encode(sha256(convert_to('<the secret>', 'UTF8')), 'hex'))
+   on conflict (id) do update set key_hash = excluded.key_hash;
+   ```
+3. On Vercel set `SS_FAMILY_SUPABASE_URL`, `SS_FAMILY_SUPABASE_ANON_KEY` and
+   `SS_FAMILY_DASHBOARD_KEY` (the secret itself, not the hash).
+
+Cards: guests at home today, visits in the next 30 days, open tasks, and dishes
+awaiting approval ("today" is Asia/Riyadh).
+
+Any project can use the same pattern: when `<PROJECT>_DASHBOARD_KEY` is set,
+its `rpc` cards pass it as the `p_key` argument.
+
+### 5. Google Calendar (Phase 1)
 
 Google Calendar → ⚙ Settings → your calendar → **Integrate calendar** → copy
 the `src` URL from *Embed code* (`https://calendar.google.com/calendar/embed?src=…`)
