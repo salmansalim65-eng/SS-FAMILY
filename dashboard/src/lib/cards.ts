@@ -87,7 +87,12 @@ async function sum(db: SupabaseClient, card: DashboardCard, range: Range | null)
 }
 
 async function rpc(db: SupabaseClient, card: DashboardCard) {
-  const { data, error } = await db.rpc(card.table_name!).abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  // A project can guard its dashboard functions with a shared secret,
+  // passed as p_key when <PROJECT>_DASHBOARD_KEY is set.
+  const key = process.env[`${card.project}_DASHBOARD_KEY`];
+  const { data, error } = await db
+    .rpc(card.table_name!, key ? { p_key: key } : undefined)
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
   if (typeof data === "number" || typeof data === "string") return { value: Number(data), previous: null };
   const obj = (Array.isArray(data) ? data[0] : data) as { value?: unknown; previous?: unknown } | null;

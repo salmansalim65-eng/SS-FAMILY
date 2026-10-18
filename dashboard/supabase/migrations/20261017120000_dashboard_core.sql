@@ -37,6 +37,7 @@ grant execute on function public.is_dashboard_owner() to authenticated;
 create or replace function public.dashboard_touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at := now();
@@ -146,6 +147,7 @@ create policy "owner full access" on public.dashboard_settings
   using (public.is_dashboard_owner())
   with check (public.is_dashboard_owner());
 
+revoke all on public.dashboard_owners from anon, authenticated;
 revoke all on public.dashboard_apps, public.dashboard_cards, public.dashboard_settings from anon;
 grant select, insert, update, delete
   on public.dashboard_apps, public.dashboard_cards, public.dashboard_settings
