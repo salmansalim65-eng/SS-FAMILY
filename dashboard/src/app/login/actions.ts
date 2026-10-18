@@ -48,6 +48,21 @@ export async function verifyCode(_: LoginState, form: FormData): Promise<LoginSt
   redirect("/");
 }
 
+export type PasswordState = { email: string; error?: string };
+
+export async function signInWithPassword(_: PasswordState, form: FormData): Promise<PasswordState> {
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+  const failed = { email, error: "Email or password is not correct." };
+  // Same answer for a non-whitelisted email as for a wrong password.
+  if (!isAllowedEmail(email) || !password) return failed;
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return failed;
+  redirect("/");
+}
+
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
