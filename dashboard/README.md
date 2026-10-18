@@ -91,6 +91,17 @@ templates if another app depends on them — just add the dashboard's
 8. **Project Settings → API**: copy the Project URL and the anon / publishable
    key for the env vars below.
 
+**Password sign-in (recommended).** The built-in Supabase mailer sends at most
+two emails an hour, and a magic link only works in the browser that asked for
+it. A password avoids both. Set one from the SQL editor of the dashboard's
+Supabase project:
+```sql
+update auth.users
+set encrypted_password = extensions.crypt('<your password>', extensions.gen_salt('bf'))
+where email = 'you@example.com';
+```
+The login page offers the password form first and the email link as a fallback.
+
 ### 2. Run locally
 
 ```bash

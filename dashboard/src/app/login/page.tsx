@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </div>
           <div>
             <h1 className="text-lg font-semibold">My Dashboard</h1>
-            <p className="text-sm text-muted">Sign in with your email</p>
+            <p className="text-sm text-muted">Sign in to continue</p>
           </div>
         </div>
         {error && ERRORS[error] && (
