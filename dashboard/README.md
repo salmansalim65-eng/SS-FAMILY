@@ -229,6 +229,18 @@ though Google shows an "unverified app" warning on the consent screen.
 General is shown instead (it only works while that browser is signed in to
 Google and allows its third-party cookies).
 
+### 6. Notes
+
+Sticky notes and checklists live on the dashboard itself, in the
+`dashboard_notes` table (owner-only RLS). Run
+`supabase/migrations/20261019120000_dashboard_notes.sql` in the dashboard's
+Supabase project once; until then the Notes section shows a setup hint.
+
+Notes save as you type, can be coloured, pinned (pinned notes stay first),
+dragged into order, and switched between text and checklist. In a checklist,
+Enter adds the next item and Backspace on an empty item removes it; ticked
+items move below the open ones.
+
 ---
 
 ## Deploy on Vercel

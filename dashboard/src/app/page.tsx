@@ -2,19 +2,21 @@ import { AppGrid } from "@/components/app-icon";
 import { CalendarEmbed } from "@/components/calendar-embed";
 import { CalendarEvents } from "@/components/calendar-events";
 import { Header } from "@/components/header";
+import { Notes } from "@/components/notes";
 import { Reports, type CardMeta } from "@/components/reports";
 import { Section } from "@/components/section";
-import { getApps, getCards, getSettings } from "@/lib/data";
+import { getApps, getCards, getNotes, getSettings } from "@/lib/data";
 import { requireOwner } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const { supabase } = await requireOwner();
-  const [apps, cards, settings] = await Promise.all([
+  const [apps, cards, settings, notes] = await Promise.all([
     getApps(supabase, { activeOnly: true }),
     getCards(supabase, { activeOnly: true }),
     getSettings(supabase),
+    getNotes(supabase),
   ]);
 
   const projects = apps.filter((a) => a.category === "project");
@@ -37,6 +39,8 @@ export default async function Home() {
       <Section title="My Projects">
         <AppGrid apps={projects} />
       </Section>
+
+      <Notes initial={notes} />
 
       <Reports cards={cardMeta} currency={settings.currency} color={color} order={[...projects, ...personal].map((a) => projectKey(a.name))} />
 

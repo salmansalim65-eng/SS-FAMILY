@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DashboardApp, DashboardCard, Settings } from "@/lib/types";
+import type { DashboardApp, DashboardCard, Note, Settings } from "@/lib/types";
 
 const DEFAULT_SETTINGS: Settings = {
   display_name: "Friend",
@@ -37,4 +37,20 @@ export async function getSettings(db: SupabaseClient): Promise<Settings> {
     if (row.key in out && row.value != null) (out as Record<string, unknown>)[row.key] = row.value;
   }
   return out;
+}
+
+/** Sticky notes, pinned first. Null when the notes table hasn't been created yet. */
+export async function getNotes(db: SupabaseClient): Promise<Note[] | null> {
+  const { data, error } = await db
+    .from("dashboard_notes")
+    .select("id, kind, title, body, items, color, pinned, sort_order, updated_at")
+    .order("pinned", { ascending: false })
+    .order("sort_order")
+    .order("created_at");
+  if (error) {
+    // 42P01 / PGRST205: the migration hasn't been run. Don't take the dashboard down for it.
+    if (error.code === "42P01" || error.code === "PGRST205") return null;
+    throw new Error(`Could not load notes: ${error.message}`);
+  }
+  return data as Note[];
 }
