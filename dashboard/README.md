@@ -121,19 +121,19 @@ npm run dev                    # http://localhost:3000
      `security definer` functions if you're unsure.
 2. Set `RMI_SUPABASE_URL` and `RMI_SUPABASE_ANON_KEY` (or
    `RMI_SUPABASE_SERVICE_ROLE_KEY`).
-3. Open **Settings → Report cards** and fix each RMI card's table and column
-   names to match the real RMI schema. The seeded guesses are:
+3. Run `supabase/project-examples/rmi_dashboard_metrics.sql` **in the RMI
+   project**, store the hash of a long random secret in `home_dashboard_key`
+   as that file explains, and set `RMI_DASHBOARD_KEY` to the secret itself.
+   RMI's tables are all behind RLS and its anon key is public, so the cards
+   call these key-guarded functions instead of reading tables:
 
-   | Card | Type | Table / function | Column(s) | Period |
-   | --- | --- | --- | --- | --- |
-   | Total students | count | `students` (status = active) | date: `created_at` | all |
-   | Fee collected today | sum | `fee_payments` | `amount`, date: `paid_on` | today |
-   | Pending dues | sum | `fee_invoices` (balance > 0) | `balance` | all |
-   | Low-stock items | rpc | `dashboard_low_stock_count` | — | — |
-   | Payroll this month | sum | `payroll` | `net_pay`, date: `pay_date` | this month |
-
-4. For low stock, run `supabase/project-examples/rmi_low_stock.sql` **in the
-   RMI project** after adjusting its table names.
+   | Card | Function | What it counts |
+   | --- | --- | --- |
+   | Total students | `home_dashboard_students` | `student_profiles` enrolled today, vs start of month |
+   | Fee collected today | `home_dashboard_fee_today` | `voucher.fee_receipt` credits to student accounts today, vs same day last month |
+   | Pending dues | `home_dashboard_pending_dues` | positive student ledger balances, vs start of month |
+   | Out-of-stock items | `home_dashboard_out_of_stock` | stocked products with nothing on hand (RMI has no reorder level) |
+   | Payroll this month | `home_dashboard_payroll` | `payroll_results.net` this month, vs last month |
 
 ### How a card is computed
 
@@ -156,9 +156,14 @@ and sets what the trend compares against:
 Need anything fancier (joins, column-vs-column)? Write a function in that
 project and use `rpc`.
 
-MBL, SSA and VISTA start as placeholders. **TODO** for each: set its
-`<PROJECT>_SUPABASE_URL` / key, then edit its cards in Settings to `count`,
-`sum` or `rpc` with the real table names. To add a new project, add its icon,
+MBL, SSA and VISTA work the same way as RMI: run
+`project-examples/<project>_dashboard_metrics.sql` in
+that project, store a secret's hash, and set `<PROJECT>_SUPABASE_URL`,
+`<PROJECT>_SUPABASE_ANON_KEY` and `<PROJECT>_DASHBOARD_KEY`. SSA's leases and
+invoices are in AED and PKR, so outstanding rent has one card per currency.
+VISTA reports in SAR and uses Asia/Riyadh for "today".
+
+To add a new project, add its icon,
 add cards with the new project key (e.g. `ACME`) and set `ACME_SUPABASE_URL` +
 `ACME_SUPABASE_ANON_KEY`. No code changes.
 
@@ -186,16 +191,43 @@ awaiting approval ("today" is Asia/Riyadh).
 Any project can use the same pattern: when `<PROJECT>_DASHBOARD_KEY` is set,
 its `rpc` cards pass it as the `p_key` argument.
 
-### 5. Google Calendar (Phase 1)
+### 5. Google Calendar
 
-Google Calendar → ⚙ Settings → your calendar → **Integrate calendar** → copy
-the `src` URL from *Embed code* (`https://calendar.google.com/calendar/embed?src=…`)
-→ paste into dashboard **Settings → General**.
+The Personal section shows **Today** and **Next 7 days** from every calendar
+ticked in your Google Calendar (up to 10), read-only. Declined and cancelled
+events are left out; times are Asia/Karachi.
 
-A private calendar only shows in the embed while you're signed in to Google in
-that browser (and some browsers block it as a third-party cookie). If it shows
-"no access", either make the calendar public (free/busy only is enough) or wait
-for Phase 2.
+One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
+
+1. Create (or pick) a project → **APIs & Services → Library** → enable
+   **Google Calendar API**.
+2. **OAuth consent screen** (Google Auth Platform → Branding / Audience):
+   app name "My Dashboard", user type **External**, your email as support and
+   developer contact. Under **Audience → Test users** add your Google email.
+   Under **Data access** add the scopes `openid`, `email` and
+   `https://www.googleapis.com/auth/calendar.readonly`.
+3. **Clients → Create client** → type **Web application** → Authorized
+   redirect URIs: `https://<your-dashboard>/api/google/callback` (one per
+   domain you use, e.g. both the `*.vercel.app` name and a custom one).
+4. On Vercel set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+   `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`), then redeploy.
+5. Run `supabase/migrations/20261019090000_dashboard_oauth_tokens.sql` in the
+   dashboard's Supabase project.
+6. Dashboard → **Settings → Google Calendar → Connect**.
+
+The refresh token is stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY`
+in `dashboard_oauth_tokens` (owner-only RLS); the access token is refreshed
+automatically. **Disconnect** deletes it and revokes it at Google.
+
+While the app is in Google's "Testing" mode, Google expires the refresh token
+after 7 days and you would need to reconnect weekly. To avoid that, publish
+the app (Audience → **Publish app**); for a single user with read-only
+calendar access no verification review is needed to keep using it yourself,
+though Google shows an "unverified app" warning on the consent screen.
+
+**Fallback:** until Google is connected, an embed URL saved in Settings →
+General is shown instead (it only works while that browser is signed in to
+Google and allows its third-party cookies).
 
 ---
 
@@ -215,21 +247,7 @@ Changing an env var on Vercel needs a redeploy to take effect.
 
 ---
 
-## Phase 2 — what's needed
-
-### Google Calendar API ("Today" and "Next 7 days" cards)
-
-1. Google Cloud Console → new project → enable **Google Calendar API**.
-2. OAuth consent screen: External, add yourself as a test user, scope
-   `https://www.googleapis.com/auth/calendar.readonly`.
-3. Credentials → OAuth client ID (Web) with redirect URI
-   `https://your-dashboard.vercel.app/api/google/callback`.
-4. Env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`.
-5. Code to add: `/api/google/connect` + `/api/google/callback` (OAuth with
-   `access_type=offline`), an encrypted `dashboard_oauth_tokens` table (RLS like
-   the others), and `/api/calendar` returning today's and next-7-days events
-   (`events.list` with `timeMin`/`timeMax`, `singleEvents=true`,
-   `timeZone=Asia/Karachi`).
+## Phase 2 — still to do
 
 ### Microsoft To Do (Microsoft Graph)
 

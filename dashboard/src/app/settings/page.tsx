@@ -1,16 +1,24 @@
 import Link from "next/link";
 import { getApps, getCards, getSettings } from "@/lib/data";
+import { googleConnection } from "@/lib/google";
 import { requireOwner } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AppsEditor } from "./apps-editor";
 import { CardsEditor } from "./cards-editor";
+import { GoogleCalendarSettings } from "./google-calendar";
 import { GeneralForm } from "./general-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
   const { supabase, user } = await requireOwner();
-  const [apps, cards, settings] = await Promise.all([getApps(supabase), getCards(supabase), getSettings(supabase)]);
+  const [apps, cards, settings, google, params] = await Promise.all([
+    getApps(supabase),
+    getCards(supabase),
+    getSettings(supabase),
+    googleConnection(supabase).catch(() => null),
+    searchParams,
+  ]);
 
   return (
     <main className="mx-auto max-w-4xl space-y-10 px-4 py-6 sm:px-6 sm:py-10">
@@ -25,6 +33,10 @@ export default async function SettingsPage() {
 
       <SettingsBlock id="general" title="General">
         <GeneralForm settings={settings} />
+      </SettingsBlock>
+
+      <SettingsBlock id="calendar" title="Google Calendar" hint="Read-only access to show today’s events and the next 7 days on the dashboard.">
+        <GoogleCalendarSettings connection={google} result={params.google} />
       </SettingsBlock>
 
       <SettingsBlock id="icons" title="Icons" hint="Drag ⠿ to reorder. Inactive icons are hidden from the dashboard.">

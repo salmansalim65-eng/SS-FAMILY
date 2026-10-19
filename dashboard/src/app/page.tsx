@@ -1,5 +1,6 @@
 import { AppGrid } from "@/components/app-icon";
 import { CalendarEmbed } from "@/components/calendar-embed";
+import { CalendarEvents } from "@/components/calendar-events";
 import { Header } from "@/components/header";
 import { Reports, type CardMeta } from "@/components/reports";
 import { Section } from "@/components/section";
@@ -44,7 +45,9 @@ export default async function Home() {
           <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
             <AppGrid apps={personal} compact />
           </div>
-          <CalendarEmbed src={settings.google_calendar_embed_url} />
+          <CalendarEvents
+            fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
+          />
         </div>
       </Section>
     </main>
