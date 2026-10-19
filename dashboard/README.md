@@ -191,16 +191,43 @@ awaiting approval ("today" is Asia/Riyadh).
 Any project can use the same pattern: when `<PROJECT>_DASHBOARD_KEY` is set,
 its `rpc` cards pass it as the `p_key` argument.
 
-### 5. Google Calendar (Phase 1)
+### 5. Google Calendar
 
-Google Calendar → ⚙ Settings → your calendar → **Integrate calendar** → copy
-the `src` URL from *Embed code* (`https://calendar.google.com/calendar/embed?src=…`)
-→ paste into dashboard **Settings → General**.
+The Personal section shows **Today** and **Next 7 days** from every calendar
+ticked in your Google Calendar (up to 10), read-only. Declined and cancelled
+events are left out; times are Asia/Karachi.
 
-A private calendar only shows in the embed while you're signed in to Google in
-that browser (and some browsers block it as a third-party cookie). If it shows
-"no access", either make the calendar public (free/busy only is enough) or wait
-for Phase 2.
+One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
+
+1. Create (or pick) a project → **APIs & Services → Library** → enable
+   **Google Calendar API**.
+2. **OAuth consent screen** (Google Auth Platform → Branding / Audience):
+   app name "My Dashboard", user type **External**, your email as support and
+   developer contact. Under **Audience → Test users** add your Google email.
+   Under **Data access** add the scopes `openid`, `email` and
+   `https://www.googleapis.com/auth/calendar.readonly`.
+3. **Clients → Create client** → type **Web application** → Authorized
+   redirect URIs: `https://<your-dashboard>/api/google/callback` (one per
+   domain you use, e.g. both the `*.vercel.app` name and a custom one).
+4. On Vercel set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+   `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`), then redeploy.
+5. Run `supabase/migrations/20261019090000_dashboard_oauth_tokens.sql` in the
+   dashboard's Supabase project.
+6. Dashboard → **Settings → Google Calendar → Connect**.
+
+The refresh token is stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY`
+in `dashboard_oauth_tokens` (owner-only RLS); the access token is refreshed
+automatically. **Disconnect** deletes it and revokes it at Google.
+
+While the app is in Google's "Testing" mode, Google expires the refresh token
+after 7 days and you would need to reconnect weekly. To avoid that, publish
+the app (Audience → **Publish app**); for a single user with read-only
+calendar access no verification review is needed to keep using it yourself,
+though Google shows an "unverified app" warning on the consent screen.
+
+**Fallback:** until Google is connected, an embed URL saved in Settings →
+General is shown instead (it only works while that browser is signed in to
+Google and allows its third-party cookies).
 
 ---
 
@@ -220,21 +247,7 @@ Changing an env var on Vercel needs a redeploy to take effect.
 
 ---
 
-## Phase 2 — what's needed
-
-### Google Calendar API ("Today" and "Next 7 days" cards)
-
-1. Google Cloud Console → new project → enable **Google Calendar API**.
-2. OAuth consent screen: External, add yourself as a test user, scope
-   `https://www.googleapis.com/auth/calendar.readonly`.
-3. Credentials → OAuth client ID (Web) with redirect URI
-   `https://your-dashboard.vercel.app/api/google/callback`.
-4. Env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`.
-5. Code to add: `/api/google/connect` + `/api/google/callback` (OAuth with
-   `access_type=offline`), an encrypted `dashboard_oauth_tokens` table (RLS like
-   the others), and `/api/calendar` returning today's and next-7-days events
-   (`events.list` with `timeMin`/`timeMax`, `singleEvents=true`,
-   `timeZone=Asia/Karachi`).
+## Phase 2 — still to do
 
 ### Microsoft To Do (Microsoft Graph)
 

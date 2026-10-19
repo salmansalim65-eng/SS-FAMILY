@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { disconnectGoogle } from "@/lib/google";
 import { requireOwner } from "@/lib/supabase/server";
 import type { CardFilter } from "@/lib/types";
 
@@ -188,5 +189,13 @@ export async function deleteCard(id: string) {
     const { supabase } = await requireOwner();
     const { error } = await supabase.from("dashboard_cards").delete().eq("id", id);
     if (error) throw new Error(error.message);
+  });
+}
+
+// ---------------------------------------------------------------- google
+export async function disconnectGoogleCalendar() {
+  return run(async () => {
+    const { supabase } = await requireOwner();
+    await disconnectGoogle(supabase);
   });
 }

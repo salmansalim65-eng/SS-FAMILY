@@ -54,3 +54,16 @@ export type Settings = {
   currency: string;
   google_calendar_embed_url: string | null;
 };
+
+/** One calendar event as the dashboard shows it. */
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string; // ISO date-time, or YYYY-MM-DD for all-day events
+  end: string;
+  allDay: boolean;
+  location: string | null;
+  link: string | null;
+  calendar: string;
+  color: string | null;
+};
