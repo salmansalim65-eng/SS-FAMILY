@@ -67,3 +67,18 @@ export type CalendarEvent = {
   calendar: string;
   color: string | null;
 };
+
+export type NoteColor = "yellow" | "pink" | "green" | "blue" | "purple" | "orange";
+export type ChecklistItem = { id: string; text: string; done: boolean };
+
+export type Note = {
+  id: string;
+  kind: "text" | "checklist";
+  title: string;
+  body: string;
+  items: ChecklistItem[];
+  color: NoteColor;
+  pinned: boolean;
+  sort_order: number;
+  updated_at: string;
+};
