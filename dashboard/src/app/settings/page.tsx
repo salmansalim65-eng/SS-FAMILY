@@ -35,7 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <GeneralForm settings={settings} />
       </SettingsBlock>
 
-      <SettingsBlock id="calendar" title="Google Calendar" hint="Read-only access to show today’s events and the next 7 days on the dashboard.">
+      <SettingsBlock id="calendar" title="Google Calendar" hint="Shows your week and upcoming events on the dashboard, and lets you add new ones.">
         <GoogleCalendarSettings connection={google} result={params.google} />
       </SettingsBlock>
 

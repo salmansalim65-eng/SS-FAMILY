@@ -19,10 +19,11 @@ export default function PrivacyPage() {
 
       <h2 className="pt-2 text-base font-semibold">Google Calendar</h2>
       <p>
-        When the owner connects Google Calendar, the dashboard asks for read-only access to calendar events
-        (<code>calendar.readonly</code>) and the account’s email address. It uses this only to show the owner’s own
-        events for today and the next seven days on the dashboard. It does not create, change or delete events, and it
-        does not share, sell or send calendar data to anyone.
+        When the owner connects Google Calendar, the dashboard asks for access to read calendars
+        (<code>calendar.readonly</code>), to add events (<code>calendar.events</code>) and for the account’s email
+        address. It uses these only to show the owner’s own events in a week and schedule view, and to add an event when
+        the owner fills in the “New event” form. It never changes or deletes existing events on its own, and it does not
+        share, sell or send calendar data to anyone.
       </p>
       <p>
         The Google refresh token is stored encrypted in the dashboard’s database. Event details are fetched on demand and

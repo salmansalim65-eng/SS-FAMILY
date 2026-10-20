@@ -15,7 +15,7 @@ export function GoogleCalendarSettings({
   connection,
   result,
 }: {
-  connection: { account_email: string | null; connected_at: string } | null;
+  connection: { account_email: string | null; connected_at: string; canWrite: boolean } | null;
   result?: string;
 }) {
   const disconnect = useAction();
@@ -31,6 +31,9 @@ export function GoogleCalendarSettings({
           <div>
             <p className="font-medium">Connected</p>
             <p className="text-sm text-muted">{connection.account_email ?? "Google account"}</p>
+            {!connection.canWrite && (
+              <p className="mt-1 text-sm text-danger">View only. Reconnect once to allow adding events from the dashboard.</p>
+            )}
           </div>
           <div className="flex gap-2">
             <a href="/api/google/connect" className="rounded-xl border border-line px-4 py-2 text-sm hover:bg-surface-2">Reconnect</a>

@@ -45,7 +45,7 @@ export default async function Home() {
       <Reports cards={cardMeta} currency={settings.currency} color={color} order={[...projects, ...personal].map((a) => projectKey(a.name))} />
 
       <Section title="Personal">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="space-y-6">
           <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
             <AppGrid apps={personal} compact />
           </div>

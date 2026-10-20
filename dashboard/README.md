@@ -193,9 +193,12 @@ its `rpc` cards pass it as the `p_key` argument.
 
 ### 5. Google Calendar
 
-The Personal section shows **Today** and **Next 7 days** from every calendar
-ticked in your Google Calendar (up to 10), read-only. Declined and cancelled
-events are left out; times are Asia/Karachi.
+The Personal section shows a **Week** view (hour grid, Monday–Sunday, with
+‹ › and Today) and a **Schedule** list (the next 14 days, like the phone
+widget) from every calendar ticked in your Google Calendar (up to 10). Event
+colours follow Google. Declined and cancelled events are left out; times are
+Asia/Karachi. **+ Event**, or clicking an empty slot in the week grid, adds an
+event to any calendar you can edit.
 
 One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
 
@@ -205,7 +208,9 @@ One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
    app name "My Dashboard", user type **External**, your email as support and
    developer contact. Under **Audience → Test users** add your Google email.
    Under **Data access** add the scopes `openid`, `email` and
-   `https://www.googleapis.com/auth/calendar.readonly`.
+   `https://www.googleapis.com/auth/calendar.readonly` and
+   `https://www.googleapis.com/auth/calendar.events`. (Connected before adding
+   events existed? Settings shows "View only" — click **Reconnect** once.)
 3. **Clients → Create client** → type **Web application** → Authorized
    redirect URIs: `https://<your-dashboard>/api/google/callback` (one per
    domain you use, e.g. both the `*.vercel.app` name and a custom one).
@@ -221,8 +226,7 @@ automatically. **Disconnect** deletes it and revokes it at Google.
 
 While the app is in Google's "Testing" mode, Google expires the refresh token
 after 7 days and you would need to reconnect weekly. To avoid that, publish
-the app (Audience → **Publish app**); for a single user with read-only
-calendar access no verification review is needed to keep using it yourself,
+the app (Audience → **Publish app**); for a single user no verification review is needed to keep using it yourself,
 though Google shows an "unverified app" warning on the consent screen.
 
 **Fallback:** until Google is connected, an embed URL saved in Settings →
