@@ -174,3 +174,13 @@ export async function deleteTodoList(listId: string): Promise<TodoResult<void>> 
     await supabase.from("dashboard_list_colors").delete().eq("list_id", listId);
   });
 }
+
+/** Saves the order the lists show in (the panel and board); Google Tasks keeps no list order. */
+export async function setTodoListOrder(listIds: string[]): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const { supabase } = await requireOwner();
+    const ids = (Array.isArray(listIds) ? listIds : []).filter((x) => typeof x === "string" && x.length > 0 && x.length <= 200).slice(0, 100);
+    const { error } = await supabase.from("dashboard_settings").upsert({ key: "task_list_order", value: ids });
+    if (error) throw new Error(error.message);
+  });
+}
