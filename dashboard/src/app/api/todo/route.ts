@@ -14,12 +14,15 @@ export async function GET() {
   try {
     const { provider, googleNeedsReconnect } = await todoProvider(owner.supabase);
     if (!provider) return NextResponse.json({ connected: false, googleNeedsReconnect, lists: [], tasks: [] });
-    const [{ lists, tasks }, colors, times] = await Promise.all([
+    const [{ lists, tasks }, colors, times, listColors] = await Promise.all([
       listTasks(owner.supabase, provider),
       // Missing tables (migration not run yet) just mean no colours / times.
       owner.supabase.from("dashboard_task_colors").select("task_id, color"),
       owner.supabase.from("dashboard_task_times").select("task_id, due_time, remind_minutes"),
+      owner.supabase.from("dashboard_list_colors").select("list_id, color"),
     ]);
+    const listColorOf = new Map((listColors.data ?? []).map((c) => [c.list_id as string, c.color]));
+    for (const l of lists) l.color = listColorOf.get(l.id) ?? null;
     const colorOf = new Map((colors.data ?? []).map((c) => [c.task_id as string, c.color]));
     const timeOf = new Map((times.data ?? []).map((c) => [c.task_id as string, String(c.due_time).slice(0, 5)]));
     const remindOf = new Map((times.data ?? []).map((c) => [c.task_id as string, c.remind_minutes as number | null]));

@@ -5,7 +5,7 @@ import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
 import { forgetTask, REMIND_CHOICES, saveTaskSchedule, taskDoneChanged } from "@/lib/task-reminders";
 import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
-import type { NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
+import type { ListColor, NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
 
 const COLORS: NoteColor[] = ["yellow", "pink", "green", "blue", "purple", "orange"];
 
@@ -115,5 +115,20 @@ export async function createTodoList(name: string): Promise<TodoResult<TodoList>
     if (!clean) throw new Error("Name the list first.");
     const { supabase, provider: p } = await provider();
     return createList(supabase, p, clean);
+  });
+}
+
+const LIST_COLORS: ListColor[] = ["blue", "purple", "green", "yellow", "pink", "teal", "orange", "gray", "indigo", "red"];
+
+/** The dashboard's own colour for a list's heading; null goes back to the automatic one. */
+export async function setTodoListColor(listId: string, color: ListColor | null): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const { supabase } = await requireOwner();
+    if (!listId || listId.length > 200) throw new Error("Unknown list.");
+    if (color && !LIST_COLORS.includes(color)) throw new Error("Unknown colour.");
+    const { error } = color
+      ? await supabase.from("dashboard_list_colors").upsert({ list_id: listId, color })
+      : await supabase.from("dashboard_list_colors").delete().eq("list_id", listId);
+    if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "List colours aren't set up yet." : error.message);
   });
 }
