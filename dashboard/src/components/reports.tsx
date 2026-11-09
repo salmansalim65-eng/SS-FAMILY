@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatValue, trend } from "@/lib/format";
+import { formatAmount, formatValue, trend } from "@/lib/format";
 import { TIME_ZONE } from "@/lib/time";
 import type { CardFormat, CardResult } from "@/lib/types";
+import { AppGlyph } from "./app-icon";
 import { Section } from "./section";
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -16,6 +17,9 @@ export type CardMeta = {
   higher_is_better: boolean;
 };
 
+/** The icon a project's cards are grouped under, matched by project key. */
+export type ProjectApp = { name: string; icon: string | null; color: string; url: string };
+
 type ProjectState = { loading: boolean; error: string | null; results: Record<string, CardResult> };
 
 const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", minute: "2-digit" });
@@ -25,10 +29,12 @@ export function Reports({
   currency,
   color,
   order,
+  apps = {},
 }: {
   cards: CardMeta[];
   currency: string;
   color: Record<string, string>;
+  apps?: Record<string, ProjectApp>;
   /** Project keys in icon order; projects not listed go last. */
   order: string[];
 }) {
@@ -71,7 +77,7 @@ export function Reports({
 
   return (
     <Section
-      title="Reports"
+      title="Projects"
       action={
         <button
           type="button"
@@ -85,16 +91,28 @@ export function Reports({
       }
     >
       {projects.length === 0 && <p className="text-sm text-muted">No report cards yet — add some in Settings.</p>}
-      <div className="space-y-6">
+      <div className="space-y-4">
         {projects.map((project) => {
           const ps = state[project];
+          const app = apps[project];
+          const accent = color[project] ?? "var(--accent)";
           return (
-            <div key={project} className="space-y-3">
-              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted">
-                <span className="size-2.5 rounded-full" style={{ background: color[project] ?? "var(--accent)" }} />
-                {project}
+            <div
+              key={project}
+              className="space-y-3 rounded-2xl border border-line bg-surface-2/50 p-3 sm:p-4"
+              style={{ borderTop: `3px solid ${accent}` }}
+            >
+              <h3 className="flex items-center gap-2.5 text-sm font-semibold">
+                {app ? <AppGlyph app={app} size="xs" /> : <span className="size-2.5 rounded-full" style={{ background: accent }} />}
+                <span className="truncate">{app?.name ?? project}</span>
+                {ps?.loading && <span aria-hidden className="animate-spin text-xs text-muted">↻</span>}
+                {app && (
+                  <a href={app.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs font-normal text-muted hover:text-fg">
+                    Open ↗
+                  </a>
+                )}
               </h3>
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-2 2xl:grid-cols-4">
                 {cards
                   .filter((c) => c.project === project)
                   .map((card) => (
@@ -131,7 +149,15 @@ function KpiCard({
 }) {
   const error = result?.error ?? (result ? null : projectError);
   const change = result ? trend(result.value, result.previous) : null;
-  const display = result?.value == null ? "—" : formatValue(result.value, card.format, currency);
+  const detail = result?.detail;
+  const display =
+    result?.value == null
+      ? "—"
+      : detail?.unit || detail?.style || detail?.suffix
+        ? formatAmount(result.value, detail.style, detail.unit, detail.suffix)
+        : formatValue(result.value, card.format, currency);
+  const amount = (v: number | null, suffix?: string) =>
+    v == null ? "—" : formatAmount(v, detail?.style, detail?.unit, suffix);
   const good = change == null ? null : change === 0 ? null : change > 0 === card.higher_is_better;
 
   return (
@@ -155,12 +181,36 @@ function KpiCard({
         </div>
       ) : (
         <>
-          <p className={`mt-2 break-words font-semibold tabular-nums tracking-tight ${display.length > 11 ? "text-base sm:text-2xl" : "text-xl sm:text-3xl"}`}>
+          <p
+            className={`mt-2 break-words font-semibold tabular-nums tracking-tight ${display.length > 11 ? "text-base sm:text-2xl" : "text-xl sm:text-3xl"} ${
+              detail?.tone === "up" ? "text-up" : detail?.tone === "down" ? "text-down" : ""
+            }`}
+          >
             {display}
           </p>
+          {detail?.rows && detail.rows.length > 0 && (
+            <dl className="mt-2 space-y-1 text-xs">
+              {detail.rows.map((r, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-2">
+                  <dt className="truncate text-muted">{r.label}</dt>
+                  <dd
+                    className={`shrink-0 tabular-nums ${r.tone === "up" ? "text-up" : r.tone === "down" ? "text-down" : ""}`}
+                  >
+                    {r.plain ? (r.value == null ? "—" : formatAmount(r.value, "full", undefined, r.suffix)) : amount(r.value, r.suffix)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {detail?.progress != null && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-label={`${Math.round(detail.progress)}%`}>
+              <div className="h-full rounded-full bg-accent" style={{ width: `${detail.progress}%` }} />
+            </div>
+          )}
+          {detail?.note && <p className="mt-1.5 text-[11px] text-muted">{detail.note}</p>}
           <p className="mt-1 text-xs">
             {change == null ? (
-              <span className="text-muted">No comparison</span>
+              detail ? null : <span className="text-muted">No comparison</span>
             ) : (
               <span className={good == null ? "text-muted" : good ? "text-up" : "text-down"}>
                 {change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change).toFixed(1)}%

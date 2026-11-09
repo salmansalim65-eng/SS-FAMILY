@@ -38,7 +38,7 @@ function arrange(notes: Note[]) {
   return [...notes].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sort_order - b.sort_order);
 }
 
-export function Notes({ initial }: { initial: Note[] | null }) {
+export function Notes({ initial, column = false }: { initial: Note[] | null; column?: boolean }) {
   const [notes, setNotes] = useState<Note[]>(() => arrange(initial ?? []));
   const [status, setStatus] = useState<Record<string, SaveState>>({});
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +160,7 @@ export function Notes({ initial }: { initial: Note[] | null }) {
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={notes.map((n) => n.id)} strategy={rectSortingStrategy}>
-            <ul className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+            <ul className={`grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 ${column ? "lg:grid-cols-1" : "lg:grid-cols-4"}`}>
               {notes.map((note) => (
                 <NoteCard
                   key={note.id}

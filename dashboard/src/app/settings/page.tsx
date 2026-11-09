@@ -1,22 +1,25 @@
 import Link from "next/link";
 import { getApps, getCards, getSettings } from "@/lib/data";
 import { googleConnection } from "@/lib/google";
+import { microsoftConnection } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AppsEditor } from "./apps-editor";
 import { CardsEditor } from "./cards-editor";
 import { GoogleCalendarSettings } from "./google-calendar";
 import { GeneralForm } from "./general-form";
+import { MicrosoftTodoSettings } from "./microsoft-todo";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ google?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ google?: string; microsoft?: string }> }) {
   const { supabase, user } = await requireOwner();
-  const [apps, cards, settings, google, params] = await Promise.all([
+  const [apps, cards, settings, google, microsoft, params] = await Promise.all([
     getApps(supabase),
     getCards(supabase),
     getSettings(supabase),
     googleConnection(supabase).catch(() => null),
+    microsoftConnection(supabase).catch(() => null),
     searchParams,
   ]);
 
@@ -37,6 +40,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <SettingsBlock id="calendar" title="Google Calendar" hint="Shows your week and upcoming events on the dashboard, and lets you add new ones.">
         <GoogleCalendarSettings connection={google} result={params.google} />
+      </SettingsBlock>
+
+      <SettingsBlock id="todo" title="Microsoft To Do" hint="Shows your open tasks on the dashboard; add and tick them off there.">
+        <MicrosoftTodoSettings connection={microsoft} result={params.microsoft} />
       </SettingsBlock>
 
       <SettingsBlock id="icons" title="Icons" hint="Drag ⠿ to reorder. Inactive icons are hidden from the dashboard.">

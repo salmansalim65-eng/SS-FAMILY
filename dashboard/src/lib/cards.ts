@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { projectClient } from "@/lib/projects";
 import { addMonths, karachiToday, monthRange, startOf, todayRange, type Range } from "@/lib/time";
-import type { CardFilter, CardResult, DashboardCard } from "@/lib/types";
+import type { CardDetail, CardFilter, CardResult, DashboardCard } from "@/lib/types";
 
 const TIMEOUT_MS = 10_000;
 const PAGE = 1000;
@@ -95,14 +95,45 @@ async function rpc(db: SupabaseClient, card: DashboardCard) {
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
   if (typeof data === "number" || typeof data === "string") return { value: Number(data), previous: null };
-  const obj = (Array.isArray(data) ? data[0] : data) as { value?: unknown; previous?: unknown } | null;
+  const obj = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
   return {
     value: obj?.value == null ? null : Number(obj.value),
     previous: obj?.previous == null ? null : Number(obj.previous),
+    detail: obj ? cardDetail(obj) : undefined,
   };
 }
 
-async function compute(card: DashboardCard): Promise<{ value: number | null; previous: number | null }> {
+const num = (v: unknown) => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+const text = (v: unknown, max = 40) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+const tone = (v: unknown): "up" | "down" | undefined => (v === "up" || v === "down" ? v : undefined);
+
+/** Picks the known detail fields out of an rpc result, ignoring anything else. */
+function cardDetail(obj: Record<string, unknown>): CardDetail | undefined {
+  const rows = Array.isArray(obj.rows)
+    ? obj.rows.slice(0, 6).map((r: Record<string, unknown>) => ({
+        label: text(r?.label) ?? "",
+        value: num(r?.value),
+        suffix: text(r?.suffix, 8),
+        tone: tone(r?.tone),
+        plain: r?.plain === true || undefined,
+      }))
+    : undefined;
+  const progress = num(obj.progress);
+  const detail: CardDetail = {
+    unit: text(obj.unit, 6),
+    style: obj.style === "lakh" || obj.style === "compact" || obj.style === "full" ? obj.style : undefined,
+    suffix: text(obj.suffix, 8),
+    tone: tone(obj.tone),
+    rows,
+    progress: progress == null ? undefined : Math.min(100, Math.max(0, progress)),
+    note: text(obj.note, 120),
+  };
+  return Object.values(detail).some((v) => v !== undefined) ? detail : undefined;
+}
+
+type Computed = { value: number | null; previous: number | null; detail?: CardDetail };
+
+async function compute(card: DashboardCard): Promise<Computed> {
   if (card.query_type === "placeholder") {
     // TODO: connect a real query — edit this card in Settings → Report cards.
     return { value: card.sample_value, previous: card.sample_previous };
@@ -130,7 +161,7 @@ export async function computeCards(cards: DashboardCard[]): Promise<CardResult[]
     isSample: cards[i].query_type === "placeholder",
     updatedAt,
     ...(s.status === "fulfilled"
-      ? { value: s.value.value, previous: s.value.previous, error: null }
+      ? { value: s.value.value, previous: s.value.previous, detail: s.value.detail, error: null }
       : {
           value: null,
           previous: null,
