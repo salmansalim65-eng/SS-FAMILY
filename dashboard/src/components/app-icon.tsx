@@ -4,17 +4,21 @@ import type { DashboardApp } from "@/lib/types";
 export function AppGlyph({ app, size = "lg" }: { app: Pick<DashboardApp, "name" | "icon" | "color">; size?: "sm" | "lg" }) {
   const box = size === "lg" ? "size-16 sm:size-[4.5rem] rounded-[1.35rem] text-lg" : "size-10 rounded-xl text-sm";
   const label = app.icon?.trim() || initials(app.name);
+  if (isImageIcon(app.icon)) {
+    // Logos sit whole on a white tile, the way phone home screens show them.
+    return (
+      <span className={`${box} flex shrink-0 items-center justify-center overflow-hidden bg-white p-[12%] shadow-sm ring-1 ring-black/5`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={app.icon!} alt="" className="size-full object-contain" />
+      </span>
+    );
+  }
   return (
     <span
       className={`${box} flex shrink-0 items-center justify-center overflow-hidden font-bold text-white shadow-sm`}
       style={{ background: `linear-gradient(145deg, ${app.color}, color-mix(in srgb, ${app.color} 70%, black))` }}
     >
-      {isImageIcon(app.icon) ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={app.icon!} alt="" className="size-full object-cover" />
-      ) : (
-        <span className={label.length > 3 ? "text-xs" : ""}>{label}</span>
-      )}
+      <span className={label.length > 3 ? "text-xs" : ""}>{label}</span>
     </span>
   );
 }
