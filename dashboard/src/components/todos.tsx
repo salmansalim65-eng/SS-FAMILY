@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, importTodoTasks, moveTodoTask, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, importTodoTasks, moveTodoTask, setTodoListOrder, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { karachiToday, addDays } from "@/lib/time";
@@ -226,6 +226,23 @@ export function Todos() {
   useEffect(() => setCanNotify(typeof Notification === "undefined" ? "unsupported" : Notification.permission), []);
   const hasReminders = state.status === "ready" && state.tasks.some((t) => t.remind !== null && t.remind !== undefined);
 
+  // ▲ ▼ on a list: swaps it with its neighbour and saves the order.
+  function moveList(i: number, dir: -1 | 1) {
+    if (state.status !== "ready") return;
+    const j = i + dir;
+    if (j < 0 || j >= state.lists.length) return;
+    const lists = [...state.lists];
+    [lists[i], lists[j]] = [lists[j], lists[i]];
+    setState({ ...state, lists });
+    start(async () => {
+      const res = await setTodoListOrder(lists.map((l) => l.id));
+      if (!res.ok) {
+        setError(res.error);
+        await load();
+      }
+    });
+  }
+
   // Deletes a list and its tasks in Google Tasks, after asking.
   function removeList(list: TodoList) {
     const n = state.status === "ready" ? state.tasks.filter((t) => t.listId === list.id && !t.done).length : 0;
@@ -262,6 +279,9 @@ export function Todos() {
         color={listColor(list, i)}
         onColor={(c) => paintList(list.id, c)}
         onDelete={ready!.provider === "google" && !list.isDefault ? () => removeList(list) : undefined}
+        onMove={(dir) => moveList(i, dir)}
+        canUp={i > 0}
+        canDown={i < ready!.lists.length - 1}
         list={list}
         tasks={ready!.tasks.filter((t) => t.listId === list.id)}
         isDone={isDone}
@@ -441,10 +461,16 @@ function ListSection({
   color,
   onColor,
   onDelete,
+  onMove,
+  canUp,
+  canDown,
 }: {
   color: (typeof LIST_COLORS)[number];
   onColor: (c: ListColor | null) => void;
   onDelete?: () => void;
+  onMove: (dir: -1 | 1) => void;
+  canUp: boolean;
+  canDown: boolean;
   layout: "stack" | "board";
   list: TodoList;
   tasks: TodoTask[];
@@ -480,6 +506,30 @@ function ListSection({
           <span className="min-w-0 flex-1 truncate">{list.name}</span>
           {open.length > 0 && <span className="rounded-full bg-white/60 px-1.5 text-xs font-medium dark:bg-black/20">{open.length}</span>}
         </button>
+        {(canUp || canDown) && (
+          <span className="flex shrink-0 items-center opacity-60 hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => onMove(-1)}
+              disabled={!canUp}
+              aria-label={`Move ${list.name} ${board ? "left" : "up"}`}
+              title={board ? "Move left" : "Move up"}
+              className="grid size-6 place-items-center rounded-full text-[11px] hover:bg-white/50 disabled:opacity-30 dark:hover:bg-black/20"
+            >
+              {board ? "◀" : "▲"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onMove(1)}
+              disabled={!canDown}
+              aria-label={`Move ${list.name} ${board ? "right" : "down"}`}
+              title={board ? "Move right" : "Move down"}
+              className="grid size-6 place-items-center rounded-full text-[11px] hover:bg-white/50 disabled:opacity-30 dark:hover:bg-black/20"
+            >
+              {board ? "▶" : "▼"}
+            </button>
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setPicking((p) => !p)}

@@ -186,7 +186,7 @@ export function CalendarEvents({
   const weekEnd = addDays(anchor, 6);
 
   return (
-    <section className="h-full rounded-2xl border border-line bg-surface p-3 shadow-sm sm:p-4">
+    <section className={`h-full rounded-2xl border border-line bg-surface p-3 shadow-sm sm:p-4 ${slim ? "flex flex-col" : ""}`}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {view === "week" && (
           <>
@@ -265,7 +265,7 @@ export function CalendarEvents({
       {!data && loading ? (
         <Skeleton />
       ) : (
-        <div className={stale ? "opacity-50 transition-opacity" : "transition-opacity"}>
+        <div className={`${stale ? "opacity-50" : ""} transition-opacity ${slim ? "flex min-h-0 flex-1 flex-col" : ""}`}>
           {view === "week" ? (
             <WeekView
               start={anchor}
@@ -662,7 +662,8 @@ function ScheduleView({
 
   let lastMonth = -1;
   return (
-    <div className={`space-y-3 overflow-y-auto pr-1 ${slim ? "h-80" : "max-h-[560px]"}`}>
+    // Slim: fills whatever height the card's row has (at least 20rem), so no gap is left under the list.
+    <div className={`space-y-3 overflow-y-auto pr-1 ${slim ? "min-h-80 flex-1 basis-0" : "max-h-[560px]"}`}>
       {days.map(({ day, key, list }) => {
         const isToday = key === todayKey;
         const monthHeading = day.m !== lastMonth && lastMonth !== -1;
