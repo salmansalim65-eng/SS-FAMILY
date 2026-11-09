@@ -101,7 +101,8 @@ export type Note = {
   updated_at: string;
 };
 
-export type TodoList = { id: string; name: string; isDefault: boolean };
+export type ListColor = "blue" | "purple" | "green" | "yellow" | "pink" | "teal" | "orange" | "gray" | "indigo" | "red";
+export type TodoList = { id: string; name: string; isDefault: boolean; color?: ListColor | null };
 
 export type TodoTask = {
   id: string;

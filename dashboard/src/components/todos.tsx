@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoTask, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoTask, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { karachiToday, addDays } from "@/lib/time";
-import type { NoteColor, TodoList, TodoTask } from "@/lib/types";
+import type { ListColor, NoteColor, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 
@@ -34,6 +34,22 @@ const ymd = ({ y, m, d }: { y: number; m: number; d: number }) => `${y}-${pad(m)
 const hmFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const nowHm = () => hmFmt.format(new Date());
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+
+// Soft heading strips for lists; each list can pick its own (🎨), else they go in order.
+const LIST_COLORS: { key: ListColor; band: string; dot: string }[] = [
+  { key: "blue", band: "bg-sky-100 text-sky-900 dark:bg-sky-950/70 dark:text-sky-100", dot: "bg-sky-300" },
+  { key: "purple", band: "bg-violet-100 text-violet-900 dark:bg-violet-950/70 dark:text-violet-100", dot: "bg-violet-300" },
+  { key: "green", band: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-100", dot: "bg-emerald-300" },
+  { key: "yellow", band: "bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-100", dot: "bg-amber-300" },
+  { key: "pink", band: "bg-rose-100 text-rose-900 dark:bg-rose-950/70 dark:text-rose-100", dot: "bg-rose-300" },
+  { key: "teal", band: "bg-teal-100 text-teal-900 dark:bg-teal-950/70 dark:text-teal-100", dot: "bg-teal-300" },
+  { key: "orange", band: "bg-orange-100 text-orange-900 dark:bg-orange-950/70 dark:text-orange-100", dot: "bg-orange-300" },
+  { key: "indigo", band: "bg-indigo-100 text-indigo-900 dark:bg-indigo-950/70 dark:text-indigo-100", dot: "bg-indigo-300" },
+  { key: "red", band: "bg-red-100 text-red-900 dark:bg-red-950/70 dark:text-red-100", dot: "bg-red-300" },
+  { key: "gray", band: "bg-slate-100 text-slate-800 dark:bg-slate-800/70 dark:text-slate-100", dot: "bg-slate-300" },
+];
+const listColor = (list: TodoList, i: number) => LIST_COLORS.find((c) => c.key === list.color) ?? LIST_COLORS[i % LIST_COLORS.length];
+
 
 // Reminder choices: minutes before the due time (null = none).
 const REMINDERS: { value: number | null; label: string }[] = [
@@ -208,13 +224,29 @@ export function Todos() {
   useEffect(() => setCanNotify(typeof Notification === "undefined" ? "unsupported" : Notification.permission), []);
   const hasReminders = state.status === "ready" && state.tasks.some((t) => t.remind !== null && t.remind !== undefined);
 
+  function paintList(listId: string, color: ListColor | null) {
+    const before = state.status === "ready" ? (state.lists.find((l) => l.id === listId)?.color ?? null) : null;
+    const paint = (c: ListColor | null) =>
+      setState((s) => (s.status === "ready" ? { ...s, lists: s.lists.map((l) => (l.id === listId ? { ...l, color: c } : l)) } : s));
+    paint(color);
+    start(async () => {
+      const res = await setTodoListColor(listId, color);
+      if (!res.ok) {
+        setError(res.error);
+        paint(before);
+      }
+    });
+  }
+
   const dates: Dates = { today: ymd(karachiToday()), tomorrow: ymd(addDays(karachiToday(), 1)), now: nowHm() };
   const ready = state.status === "ready" ? state : null;
   const sections = (layout: "stack" | "board") =>
-    ready!.lists.map((list) => (
+    ready!.lists.map((list, i) => (
       <ListSection
         key={list.id}
         layout={layout}
+        color={listColor(list, i)}
+        onColor={(c) => paintList(list.id, c)}
         list={list}
         tasks={ready!.tasks.filter((t) => t.listId === list.id)}
         isDone={isDone}
@@ -226,7 +258,7 @@ export function Todos() {
     ));
 
   const headerButtons = (inBoard: boolean) => (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs [&>*]:whitespace-nowrap">
       {ready?.provider === "google" && (
         <button type="button" onClick={newList} disabled={pending} className="text-muted hover:text-fg">
           + List
@@ -242,7 +274,7 @@ export function Todos() {
           className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
           title="Show reminders as notifications on this computer"
         >
-          🔔 Allow alerts
+          🔔 Alerts
         </button>
       )}
       {ready && !inBoard && (
@@ -370,7 +402,11 @@ function ListSection({
   onToggle,
   onOpen,
   onAdd,
+  color,
+  onColor,
 }: {
+  color: (typeof LIST_COLORS)[number];
+  onColor: (c: ListColor | null) => void;
   layout: "stack" | "board";
   list: TodoList;
   tasks: TodoTask[];
@@ -382,24 +418,65 @@ function ListSection({
 }) {
   const [showCompleted, setShowCompleted] = useState(false);
   const [folded, setFolded] = useState(false);
+  const [picking, setPicking] = useState(false);
   const open = tasks.filter((t) => !isDone(t));
   const finished = tasks.filter((t) => isDone(t));
   const board = layout === "board";
 
   return (
-    <div className={board ? "flex max-h-full w-80 shrink-0 flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm" : "rounded-xl border border-line/70 p-2.5"}>
-      <button
-        type="button"
-        onClick={() => !board && setFolded((f) => !f)}
-        aria-expanded={board ? undefined : !folded}
-        className={`flex w-full items-center gap-2 text-left ${board ? "mb-2 cursor-default text-lg" : "text-sm"} font-semibold`}
-      >
-        {!board && <span className="w-3 text-xs text-muted">{folded ? "▸" : "▾"}</span>}
-        <span className="min-w-0 flex-1 truncate">{list.name}</span>
-        <span className="text-xs font-normal text-muted">{open.length || ""}</span>
-      </button>
+    <div
+      className={
+        board
+          ? "flex max-h-full w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm"
+          : "overflow-hidden rounded-xl border border-line/70"
+      }
+    >
+      <div className={`flex items-center gap-1 ${color.band} ${board ? "px-4 py-2" : "px-2.5 py-1"}`}>
+        <button
+          type="button"
+          onClick={() => !board && setFolded((f) => !f)}
+          aria-expanded={board ? undefined : !folded}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left font-semibold ${board ? "cursor-default text-lg" : "text-sm"}`}
+        >
+          {!board && <span className="w-3 text-xs opacity-60">{folded ? "▸" : "▾"}</span>}
+          <span className="min-w-0 flex-1 truncate">{list.name}</span>
+          {open.length > 0 && <span className="rounded-full bg-white/60 px-1.5 text-xs font-medium dark:bg-black/20">{open.length}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPicking((p) => !p)}
+          aria-label={`Colour for ${list.name}`}
+          aria-expanded={picking}
+          title="Heading colour"
+          className="grid size-6 shrink-0 place-items-center rounded-full text-xs opacity-60 hover:bg-white/50 hover:opacity-100 dark:hover:bg-black/20"
+        >
+          🎨
+        </button>
+      </div>
+      {picking && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-2.5 py-2" role="group" aria-label="Heading colour">
+          {LIST_COLORS.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => {
+                onColor(c.key);
+                setPicking(false);
+              }}
+              aria-label={c.key}
+              aria-pressed={color.key === c.key}
+              className={`size-6 rounded-full ${c.dot} ${color.key === c.key ? "ring-2 ring-fg ring-offset-1 ring-offset-surface" : ""}`}
+            />
+          ))}
+          {list.color && (
+            <button type="button" onClick={() => (onColor(null), setPicking(false))} className="ml-1 text-xs text-muted hover:text-fg">
+              Auto
+            </button>
+          )}
+        </div>
+      )}
       {!folded && (
-        <div className={board ? "min-h-0 flex-1 overflow-y-auto pr-1" : "mt-1.5"}>
+        <div className={board ? "min-h-0 flex-1 overflow-y-auto p-3 pr-2" : "p-2"}>
           <AddTask onAdd={(title, due, time, remind) => onAdd(list.id, title, due, time, remind)} />
           {open.length === 0 ? (
             <p className="px-1.5 py-1.5 text-xs text-muted">{finished.length ? "All done 🎉" : "No tasks yet"}</p>
