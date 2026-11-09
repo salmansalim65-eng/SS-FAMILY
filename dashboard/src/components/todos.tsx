@@ -1,15 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, setTodoTaskDone } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoTask, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { karachiToday, addDays } from "@/lib/time";
-import type { TodoList, TodoTask } from "@/lib/types";
+import type { NoteColor, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
 
 const REFRESH_MS = 5 * 60 * 1000;
 const OPEN_URL = { google: "https://tasks.google.com/", microsoft: "https://to-do.live.com/tasks/" } as const;
 const NEW_LIST = "__new__";
+
+// The same colours as sticky notes.
+const TASK_COLORS: { key: NoteColor; row: string; dot: string }[] = [
+  { key: "yellow", row: "bg-amber-100 dark:bg-amber-950/50", dot: "bg-amber-300" },
+  { key: "pink", row: "bg-rose-100 dark:bg-rose-950/50", dot: "bg-rose-300" },
+  { key: "green", row: "bg-emerald-100 dark:bg-emerald-950/50", dot: "bg-emerald-300" },
+  { key: "blue", row: "bg-sky-100 dark:bg-sky-950/50", dot: "bg-sky-300" },
+  { key: "purple", row: "bg-violet-100 dark:bg-violet-950/50", dot: "bg-violet-300" },
+  { key: "orange", row: "bg-orange-100 dark:bg-orange-950/50", dot: "bg-orange-300" },
+];
+const rowColor = (c?: NoteColor | null) => TASK_COLORS.find((x) => x.key === c)?.row;
 
 type Provider = keyof typeof OPEN_URL;
 type State =
@@ -36,7 +47,10 @@ export function Todos() {
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Set<string>>(new Set());
+  // Ticks not yet confirmed by a reload: task id → done.
+  const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
+  const [detail, setDetail] = useState<TodoTask | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
 
@@ -59,7 +73,7 @@ export function Todos() {
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       if (!body.connected) return setState({ status: "disconnected", reconnect: Boolean(body.googleNeedsReconnect) });
       setState({ status: "ready", provider: body.provider, lists: body.lists, tasks: body.tasks });
-      setDone(new Set());
+      setOverrides(new Map());
       setListId((current) => current || body.lists.find((l: TodoList) => l.isDefault)?.id || body.lists[0]?.id || "");
     } catch (e) {
       setState({ status: "error", message: e instanceof Error ? e.message : "Failed to load" });
@@ -101,24 +115,26 @@ export function Todos() {
     });
   }
 
-  function toggle(task: TodoTask) {
-    const next = !done.has(task.id);
-    setDone((s) => {
-      const copy = new Set(s);
-      if (next) copy.add(task.id);
-      else copy.delete(task.id);
+  const isDone = (t: TodoTask) => overrides.get(t.id) ?? t.done;
+
+  function setDoneLocal(id: string, value: boolean | undefined) {
+    setOverrides((m) => {
+      const copy = new Map(m);
+      if (value === undefined) copy.delete(id);
+      else copy.set(id, value);
       return copy;
     });
+  }
+
+  // Ticking moves the task to "Completed" (and back); only the checkbox does this.
+  function toggle(task: TodoTask) {
+    const next = !isDone(task);
+    setDoneLocal(task.id, next);
     start(async () => {
       const res = await setTodoTaskDone(task.listId, task.id, next);
       if (!res.ok) {
         setError(res.error);
-        setDone((s) => {
-          const copy = new Set(s);
-          if (next) copy.delete(task.id);
-          else copy.add(task.id);
-          return copy;
-        });
+        setDoneLocal(task.id, undefined);
       }
     });
   }
@@ -245,38 +261,239 @@ export function Todos() {
             </p>
           )}
 
-          {state.tasks.length === 0 ? (
-            <p className="py-2 text-sm text-muted">All done — no open tasks.</p>
-          ) : (
-            <ul className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
-              {state.tasks.map((t) => {
-                const isDone = done.has(t.id);
-                const label = t.due ? dueLabel(t.due, today, tomorrow) : null;
-                return (
-                  <li key={`${t.listId}:${t.id}`}>
-                    <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-1.5 py-1.5 hover:bg-surface-2">
-                      <input type="checkbox" checked={isDone} onChange={() => toggle(t)} className="mt-0.5 size-4 shrink-0 accent-[#2564cf]" />
-                      <span className="min-w-0 flex-1">
-                        <span className={`block text-sm ${isDone ? "text-muted line-through" : ""}`}>
-                          {t.important && <span className="mr-1 text-amber-500" aria-label="Important">★</span>}
-                          {t.title}
-                        </span>
-                        {(label || state.lists.length > 1) && (
-                          <span className="block truncate text-[11px] text-muted">
-                            {label && <span className={label.tone}>{label.text}</span>}
-                            {label && state.lists.length > 1 && " · "}
-                            {state.lists.length > 1 && t.listName}
-                          </span>
-                        )}
+          {(() => {
+            const open = state.tasks.filter((t) => !isDone(t));
+            const finished = state.tasks.filter((t) => isDone(t));
+            const row = (t: TodoTask) => {
+              const doneNow = isDone(t);
+              const label = t.due && !doneNow ? dueLabel(t.due, today, tomorrow) : null;
+              return (
+                <li
+                  key={`${t.listId}:${t.id}`}
+                  className={`flex items-start gap-2.5 rounded-lg px-1.5 py-1.5 ${rowColor(t.color) ?? "hover:bg-surface-2"} ${
+                    t.color ? "mb-0.5 hover:brightness-95" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={doneNow}
+                    onChange={() => toggle(t)}
+                    aria-label={doneNow ? `Mark "${t.title}" not done` : `Mark "${t.title}" done`}
+                    className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[#1a73e8]"
+                  />
+                  <button type="button" onClick={() => setDetail(t)} className="min-w-0 flex-1 text-left" dir="auto">
+                    <span className={`block text-sm ${doneNow ? "text-muted line-through" : ""}`}>
+                      {t.important && <span className="mr-1 text-amber-500" aria-label="Important">★</span>}
+                      {t.title}
+                    </span>
+                    {(label || t.notes || state.lists.length > 1) && (
+                      <span className="block truncate text-[11px] text-muted">
+                        {[label && <span key="d" className={label.tone}>{label.text}</span>, state.lists.length > 1 && t.listName, t.notes && "📝"]
+                          .filter(Boolean)
+                          .map((part, k) => (
+                            <span key={k}>
+                              {k > 0 && " · "}
+                              {part}
+                            </span>
+                          ))}
                       </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
+                    )}
+                  </button>
+                </li>
+              );
+            };
+            return (
+              <div className="max-h-64 overflow-y-auto pr-1">
+                {open.length === 0 ? (
+                  <p className="py-2 text-sm text-muted">All done — no open tasks.</p>
+                ) : (
+                  <ul className="space-y-0.5">{open.map(row)}</ul>
+                )}
+                {finished.length > 0 && (
+                  <div className="mt-2 border-t border-line pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowCompleted((v) => !v)}
+                      aria-expanded={showCompleted}
+                      className="px-1.5 py-1 text-xs font-medium text-muted hover:text-fg"
+                    >
+                      {showCompleted ? "▾" : "▸"} Completed ({finished.length})
+                    </button>
+                    {showCompleted && <ul className="space-y-0.5">{finished.map(row)}</ul>}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          {detail && (
+            <TaskDetail
+              task={detail}
+              done={isDone(detail)}
+              openUrl={OPEN_URL[state.provider]}
+              onClose={() => setDetail(null)}
+              onToggle={() => {
+                toggle(detail);
+                setDetail(null);
+              }}
+              onSaved={async () => {
+                setDetail(null);
+                await load();
+              }}
+              onColor={(color) => {
+                const id = detail.id;
+                const before = detail.color ?? null;
+                const paint = (c: NoteColor | null) => {
+                  setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.map((x) => (x.id === id ? { ...x, color: c } : x)) } : s));
+                  setDetail((d) => (d && d.id === id ? { ...d, color: c } : d));
+                };
+                paint(color);
+                start(async () => {
+                  const res = await setTodoTaskColor(id, color);
+                  if (!res.ok) {
+                    setError(res.error);
+                    paint(before);
+                  }
+                });
+              }}
+            />
           )}
         </>
       )}
     </section>
+  );
+}
+
+/** A task opened from the list: edit its title, notes and due date, tick it, or delete it. */
+function TaskDetail({
+  task,
+  done,
+  openUrl,
+  onClose,
+  onToggle,
+  onSaved,
+  onColor,
+}: {
+  task: TodoTask;
+  done: boolean;
+  openUrl: string;
+  onClose: () => void;
+  onToggle: () => void;
+  onSaved: () => Promise<void>;
+  onColor: (color: NoteColor | null) => void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [notes, setNotes] = useState(task.notes ?? "");
+  const [due, setDue] = useState(task.due ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function save(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    start(async () => {
+      const res = await updateTodoTask(task.listId, task.id, { title, notes, due: due || null });
+      if (!res.ok) return setError(res.error);
+      await onSaved();
+    });
+  }
+
+  function remove() {
+    if (!confirm(`Delete "${task.title}"?`)) return;
+    setError(null);
+    start(async () => {
+      const res = await deleteTodoTask(task.listId, task.id);
+      if (!res.ok) return setError(res.error);
+      await onSaved();
+    });
+  }
+
+  const field = "w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent";
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form
+        onSubmit={save}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Task"
+        className="w-full max-w-md space-y-3 rounded-2xl border border-line bg-surface p-5 shadow-xl"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-muted">
+            {task.listName}
+            {done && " · Completed"}
+          </p>
+          <button type="button" onClick={onClose} className="text-muted hover:text-fg" aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={255} dir="auto" aria-label="Title" className={`${field} text-base font-medium`} />
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={4}
+          maxLength={8000}
+          dir="auto"
+          placeholder="Details / notes"
+          aria-label="Notes"
+          className={field}
+        />
+        <label className="flex items-center gap-2 text-sm text-muted">
+          Due
+          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="rounded-lg border border-line bg-surface px-2 py-1 text-sm text-fg" />
+          {due && (
+            <button type="button" onClick={() => setDue("")} className="text-xs hover:text-fg">
+              clear
+            </button>
+          )}
+        </label>
+        <div className="flex items-center gap-1.5" role="group" aria-label="Colour">
+          <span className="mr-1 text-sm text-muted">Colour</span>
+          <button
+            type="button"
+            onClick={() => onColor(null)}
+            aria-label="No colour"
+            aria-pressed={!task.color}
+            className={`grid size-6 place-items-center rounded-full border border-line text-[10px] text-muted ${!task.color ? "ring-2 ring-fg ring-offset-1" : ""}`}
+          >
+            ✕
+          </button>
+          {TASK_COLORS.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => onColor(c.key)}
+              aria-label={c.key}
+              aria-pressed={task.color === c.key}
+              className={`size-6 rounded-full ${c.dot} ${task.color === c.key ? "ring-2 ring-fg ring-offset-1" : ""}`}
+            />
+          ))}
+        </div>
+        {error && (
+          <p className="rounded-lg bg-danger-soft px-2 py-1 text-xs text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button type="button" onClick={remove} disabled={pending} className="rounded-xl px-3 py-2 text-sm text-danger hover:bg-danger-soft disabled:opacity-60">
+            Delete
+          </button>
+          <a href={openUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted hover:text-fg">
+            Open ↗
+          </a>
+          <button type="button" onClick={onToggle} disabled={pending} className="ml-auto rounded-xl border border-line px-3 py-2 text-sm hover:bg-surface-2 disabled:opacity-60">
+            {done ? "Mark not done" : "✓ Done"}
+          </button>
+          <button type="submit" disabled={pending} className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+            {pending ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

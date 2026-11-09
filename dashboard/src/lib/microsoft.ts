@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { requireEnv } from "@/lib/env";
-import type { TodoList, TodoTask } from "@/lib/types";
+import type { TodoList, TodoTask, TodoTaskEdit } from "@/lib/types";
 
 // Microsoft To Do through Microsoft Graph, signed in with the owner's
 // Microsoft account. The refresh token is stored encrypted, like Google's.
@@ -165,6 +165,7 @@ type GTask = {
   importance?: string;
   dueDateTime?: { dateTime: string; timeZone: string } | null;
   createdDateTime?: string;
+  body?: { content?: string; contentType?: string };
 };
 
 /** The owner's lists and every open task in them (flagged emails left out). */
@@ -192,6 +193,8 @@ export async function listTodos(db: SupabaseClient): Promise<{ lists: TodoList[]
         // With the Prefer header the due date comes back in Karachi time.
         due: t.dueDateTime?.dateTime ? t.dueDateTime.dateTime.slice(0, 10) : null,
         created: t.createdDateTime ?? null,
+        notes: t.body?.contentType === "text" && t.body.content?.trim() ? t.body.content.trim() : null,
+        done: false,
       }));
     }),
   );
@@ -222,4 +225,21 @@ export async function setTodoDone(db: SupabaseClient, listId: string, taskId: st
     method: "PATCH",
     body: { status: done ? "completed" : "notStarted" },
   });
+}
+
+export async function updateTodo(db: SupabaseClient, listId: string, taskId: string, edit: TodoTaskEdit) {
+  const token = await accessToken(db);
+  await graph(token, `/me/todo/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, {
+    method: "PATCH",
+    body: {
+      title: edit.title,
+      body: { content: edit.notes, contentType: "text" },
+      dueDateTime: edit.due ? { dateTime: `${edit.due}T00:00:00`, timeZone: GRAPH_TIME_ZONE } : null,
+    },
+  });
+}
+
+export async function deleteTodo(db: SupabaseClient, listId: string, taskId: string) {
+  const token = await accessToken(db);
+  await graph(token, `/me/todo/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
 }
