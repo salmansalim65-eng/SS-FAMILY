@@ -15,9 +15,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createNote, deleteNote, reorderNotes, updateNote, type NotePatch } from "@/app/notes/actions";
 import type { ChecklistItem, Note, NoteColor } from "@/lib/types";
+import { DICTATION_LANGS, useDictation } from "./dictation";
 import { Section } from "./section";
 
 const SAVE_DELAY_MS = 600;
+const LANG_KEY = "dashboard.dictationLang";
 
 const COLORS: { key: NoteColor; card: string; dot: string }[] = [
   { key: "yellow", card: "bg-amber-100 border-amber-200 dark:bg-amber-950/50 dark:border-amber-900", dot: "bg-amber-300" },
@@ -43,7 +45,22 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
   const [status, setStatus] = useState<Record<string, SaveState>>({});
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [lang, setLang] = useState<string>(DICTATION_LANGS[0].code);
   const pending = useRef(new Map<string, NotePatch>());
+
+  // Dictation language, remembered per browser.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved && DICTATION_LANGS.some((l) => l.code === saved)) setLang(saved);
+    } catch {}
+  }, []);
+  function chooseLang(code: string) {
+    setLang(code);
+    try {
+      localStorage.setItem(LANG_KEY, code);
+    } catch {}
+  }
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const flush = useCallback(async (id: string) => {
@@ -139,7 +156,20 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
   }
 
   const action = initial && (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex rounded-full border border-line p-0.5 text-xs" role="group" aria-label="Dictation language" title="Language for 🎤 dictation">
+        {DICTATION_LANGS.map((l) => (
+          <button
+            key={l.code}
+            type="button"
+            onClick={() => chooseLang(l.code)}
+            aria-pressed={lang === l.code}
+            className={`rounded-full px-2 py-0.5 ${lang === l.code ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
       <button type="button" disabled={creating} onClick={() => add("text")} className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-60">
         + Note
       </button>
@@ -168,6 +198,7 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
               {notes.map((note) => (
                 <NoteCard
                   key={note.id}
+                  lang={lang}
                   note={note}
                   status={status[note.id]}
                   onChange={(patch, opts) => change(note.id, patch, opts)}
@@ -190,6 +221,7 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
 }
 
 function NoteCard({
+  lang,
   note,
   status,
   onChange,
@@ -197,6 +229,7 @@ function NoteCard({
   onPin,
   onDelete,
 }: {
+  lang: string;
   note: Note;
   status?: SaveState;
   onChange: (patch: NotePatch, opts?: { now?: boolean }) => void;
@@ -207,6 +240,20 @@ function NoteCard({
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: note.id });
   const [palette, setPalette] = useState(false);
   const color = colorOf(note.color);
+
+  // Dictation adds each spoken phrase to the end of the note, or as a new
+  // checklist item. The ref keeps the latest note for the async callback.
+  const latest = useRef(note);
+  latest.current = note;
+  const dictation = useDictation(lang, (text) => {
+    const n = latest.current;
+    if (n.kind === "text") {
+      const body = n.body && !/\s$/.test(n.body) ? `${n.body} ${text}` : `${n.body}${text}`;
+      onChange({ body: body.slice(0, 10000) });
+    } else {
+      onChange({ items: [...n.items.filter((i) => i.text.trim()), { id: newId(), text, done: false }] });
+    }
+  });
 
   function convert() {
     if (note.kind === "text") {
@@ -241,6 +288,7 @@ function NoteCard({
           onChange={(e) => onChange({ title: e.target.value })}
           onBlur={onBlur}
           placeholder="Title"
+          dir="auto"
           maxLength={200}
           aria-label="Note title"
           className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-muted/70"
@@ -263,6 +311,7 @@ function NoteCard({
             onChange={(e) => onChange({ body: e.target.value })}
             onBlur={onBlur}
             placeholder="Write something…"
+            dir="auto"
             maxLength={10000}
             rows={4}
             aria-label="Note text"
@@ -304,8 +353,32 @@ function NoteCard({
         >
           {note.kind === "text" ? "☑" : "¶"}
         </button>
-        <span className="ml-auto" aria-live="polite">
-          {status === "saving" ? "Saving…" : status === "error" ? <span className="text-danger">Not saved</span> : ""}
+        {dictation.supported && (
+          <button
+            type="button"
+            onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
+            aria-pressed={dictation.listening}
+            aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+            title={dictation.listening ? "Stop dictation" : "Speak to write"}
+            className={`rounded px-1 py-0.5 ${
+              dictation.listening ? "animate-pulse bg-red-500 text-white" : "hover:bg-black/5 dark:hover:bg-white/10"
+            }`}
+          >
+            🎤
+          </button>
+        )}
+        <span className="ml-auto truncate" aria-live="polite">
+          {dictation.error ? (
+            <span className="text-danger">{dictation.error}</span>
+          ) : dictation.listening ? (
+            "Listening…"
+          ) : status === "saving" ? (
+            "Saving…"
+          ) : status === "error" ? (
+            <span className="text-danger">Not saved</span>
+          ) : (
+            ""
+          )}
         </span>
         <button type="button" onClick={onDelete} aria-label="Delete note" className="rounded px-1 py-0.5 opacity-60 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10">
           🗑
@@ -391,6 +464,7 @@ function Checklist({
                 }
               }}
               placeholder="List item"
+              dir="auto"
               maxLength={500}
               aria-label="Checklist item"
               className={`min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/70 ${item.done ? "text-muted line-through" : ""}`}

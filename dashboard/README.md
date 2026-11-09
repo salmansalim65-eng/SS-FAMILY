@@ -1,4 +1,4 @@
-# My Dashboard
+# SS Dashboard
 
 A personal "home screen" for all my work: project icons, live KPI cards from
 each project's own Supabase, Google Calendar, Microsoft To Do and family links.
@@ -17,6 +17,7 @@ as its own Vercel project. It does not touch the SS Family app.
 | --- | --- |
 | Top bar | Every icon in one sticky bar — projects (SSA, VISTA, RMI, MBL, SS Family) then personal (Mera, Google Calendar, Microsoft To Do); tap → opens in a new tab. Live Asia/Karachi date and time, theme toggle, settings, sign out |
 | Schedule · To Do · Notes | One row of three panels: this week's Google Calendar (+ to add an event, **Week** opens the full week grid), open Microsoft To Do tasks (add, tick off, due dates) and your sticky notes |
+| Two screens | **⧉ Two screens** (wide screens) opens the project cards in a second window, on the other monitor where the browser allows it, and keeps schedule, to-do and notes here; **▣ One screen** joins them again. `/?screen=day` and `/?screen=projects` can be bookmarked |
 | Projects | Compact KPI cards grouped per project under its logo, up to six to a row: the main figure with sub-rows (Dr/Cr, overdue, budget…). Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
 | Settings | Currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
 
@@ -81,7 +82,7 @@ templates if another app depends on them — just add the dashboard's
 7. *(Own project only, recommended)* **Authentication → Emails → Magic Link** template — make the
    link work on any device and include the code:
    ```html
-   <h2>Sign in to My Dashboard</h2>
+   <h2>Sign in to SS Dashboard</h2>
    <p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Sign in</a></p>
    <p>Or enter this code: <strong>{{ .Token }}</strong></p>
    ```
@@ -239,7 +240,7 @@ Sticky notes and checklists live on the dashboard itself, in the
 `supabase/migrations/20261019120000_dashboard_notes.sql` in the dashboard's
 Supabase project once; until then the Notes section shows a setup hint.
 
-Notes save as you type, can be coloured, pinned (pinned notes stay first),
+Notes save as you type and sync across devices. 🎤 on a note dictates into it (the browser's own speech recognition, Chrome / Edge / Safari); EN / اردو in the Notes header picks the language. Notes can be coloured, pinned (pinned notes stay first),
 dragged into order, and switched between text and checklist. In a checklist,
 Enter adds the next item and Backspace on an empty item removes it; ticked
 items move below the open ones.

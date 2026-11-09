@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata: Metadata = { title: "Privacy · My Dashboard" };
+export const metadata: Metadata = { title: "Privacy · SS Dashboard" };
 
 // Public page: Google's OAuth consent screen needs a privacy policy link.
 export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-2xl space-y-5 px-4 py-10 text-sm leading-relaxed sm:px-6">
       <div>
-        <Link href="/" className="text-muted hover:text-fg">← My Dashboard</Link>
+        <Link href="/" className="text-muted hover:text-fg">← SS Dashboard</Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">Privacy policy</h1>
       </div>
 
       <p>
-        My Dashboard is a private, single-user dashboard. Only its owner can sign in; there is no public sign-up and no
+        SS Dashboard (formerly My Dashboard) is a private, single-user dashboard. Only its owner can sign in; there is no public sign-up and no
         other users.
       </p>
 

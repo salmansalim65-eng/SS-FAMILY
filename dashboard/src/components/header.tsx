@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { signOut } from "@/app/login/actions";
 import { TIME_ZONE } from "@/lib/time";
+import { SplitScreens, type Screen } from "./split-screens";
 import { ThemeToggle } from "./theme-toggle";
 
 const dateFmt = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -19,7 +20,15 @@ const roundBtn = "flex size-9 items-center justify-center rounded-full border bo
  * Karachi clock and the theme / settings / sign-out buttons on the right.
  * On phones the clock and buttons sit above the icons.
  */
-export function Header({ showSettings = true, children }: { showSettings?: boolean; children?: React.ReactNode }) {
+export function Header({
+  showSettings = true,
+  screen = "all",
+  children,
+}: {
+  showSettings?: boolean;
+  screen?: Screen;
+  children?: React.ReactNode;
+}) {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
@@ -29,6 +38,9 @@ export function Header({ showSettings = true, children }: { showSettings?: boole
 
   const controls = (
     <div className="flex items-center gap-1.5">
+      <div className="hidden items-center gap-1.5 lg:flex">
+        <SplitScreens screen={screen} />
+      </div>
       <ThemeToggle />
       {showSettings && (
         <Link href="/settings" aria-label="Settings" className={roundBtn}>
