@@ -22,6 +22,28 @@ function recognitionClass(): (new () => Recognition) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** A plain message for the browser's speech errors; null when it is not worth showing. */
+function errorText(code: string, lang: string): string | null {
+  switch (code) {
+    case "no-speech":
+    case "aborted":
+      return null;
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone blocked: allow it for this site (🔒 in the address bar).";
+    case "audio-capture":
+      return "No microphone found.";
+    case "network":
+      // The browser sends the audio to its own speech service (Google for
+      // Chrome, Microsoft for Edge); Brave, Opera, VPNs and firewalls block it.
+      return "This browser couldn't reach its speech service. Use Chrome, or press Win+H (Windows) / the keyboard mic (phone) to dictate.";
+    case "language-not-supported":
+      return `This browser can't dictate in ${lang.startsWith("ur") ? "Urdu" : "this language"}; try Chrome or switch to EN.`;
+    default:
+      return `Dictation failed (${code}).`;
+  }
+}
+
 export const DICTATION_LANGS = [
   { code: "en-US", label: "EN" },
   { code: "ur-PK", label: "اردو" },
@@ -59,9 +81,7 @@ export function useDictation(lang: string, onText: (text: string) => void) {
         if (res.isFinal && text) callback.current(text);
       }
     };
-    r.onerror = (e) => {
-      setError(e.error === "not-allowed" ? "Allow the microphone for this site to dictate." : e.error === "no-speech" ? null : e.error);
-    };
+    r.onerror = (e) => setError(errorText(e.error, lang));
     r.onend = () => setListening(false);
     rec.current = r;
     setError(null);
