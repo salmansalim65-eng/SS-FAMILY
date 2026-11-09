@@ -3,6 +3,7 @@
 import { GoogleNotConnected } from "@/lib/google";
 import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
+import { forgetTask, REMIND_CHOICES, saveTaskSchedule, taskDoneChanged } from "@/lib/task-reminders";
 import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
 import type { NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
 
@@ -13,16 +14,13 @@ export type TodoResult<T = void> = { ok: true; data?: T } | { ok: false; error: 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/**
- * Google Tasks keeps only a due date, so the time is the dashboard's own,
- * kept by task id (null clears it). A missing table just means no times.
- */
-async function saveTime(db: Awaited<ReturnType<typeof requireOwner>>["supabase"], taskId: string, time: string | null) {
-  const { error } = time
-    ? await db.from("dashboard_task_times").upsert({ task_id: taskId, due_time: time })
-    : await db.from("dashboard_task_times").delete().eq("task_id", taskId);
-  if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "Task times aren't set up yet." : error.message);
+function checkRemind(remind: number | null | undefined, time: string | null) {
+  if (remind === null || remind === undefined) return null;
+  if (!time) throw new Error("Set a time for the reminder.");
+  if (!(REMIND_CHOICES as readonly number[]).includes(remind)) throw new Error("That reminder is not valid.");
+  return remind;
 }
+
 
 async function attempt<T>(fn: () => Promise<T>): Promise<TodoResult<T>> {
   try {
@@ -42,23 +40,37 @@ async function provider() {
   return { supabase, provider };
 }
 
-export async function addTodoTask(listId: string, title: string, due: string | null, time: string | null = null): Promise<TodoResult<void>> {
+export async function addTodoTask(
+  listId: string,
+  title: string,
+  due: string | null,
+  time: string | null = null,
+  remind: number | null = null,
+): Promise<TodoResult<void>> {
   return attempt(async () => {
     const clean = title.trim().slice(0, 255);
     if (!clean) throw new Error("Write the task first.");
     if (!listId) throw new Error("Pick a list.");
     if (due && !DATE.test(due)) throw new Error("That due date is not valid.");
     if (time && (!due || !TIME.test(time))) throw new Error(due ? "That time is not valid." : "Pick a due date for the time.");
+    const reminder = checkRemind(remind, time);
     const { supabase, provider: p } = await provider();
     const id = await addTask(supabase, p, listId, clean, due || null);
-    if (time && id) await saveTime(supabase, id, time);
+    if (time && id) await saveTaskSchedule(supabase, id, { title: clean, due, time, remind: reminder });
   });
 }
 
-export async function setTodoTaskDone(listId: string, taskId: string, done: boolean): Promise<TodoResult<void>> {
+export async function setTodoTaskDone(
+  listId: string,
+  taskId: string,
+  done: boolean,
+  task?: { title: string; due: string | null },
+): Promise<TodoResult<void>> {
   return attempt(async () => {
     const { supabase, provider: p } = await provider();
     await setTaskDone(supabase, p, listId, taskId, done);
+    // The tick has happened; a reminder that can't follow it is not worth an error.
+    if (task) await taskDoneChanged(supabase, taskId, done, task.title.slice(0, 255), task.due && DATE.test(task.due) ? task.due : null).catch(() => {});
   });
 }
 
@@ -69,9 +81,10 @@ export async function updateTodoTask(listId: string, taskId: string, edit: TodoT
     if (edit.due && !DATE.test(edit.due)) throw new Error("That due date is not valid.");
     const time = edit.due && edit.time ? edit.time : null;
     if (time && !TIME.test(time)) throw new Error("That time is not valid.");
+    const remind = checkRemind(edit.remind, time);
     const { supabase, provider: p } = await provider();
     await updateTask(supabase, p, listId, taskId, { title, notes: edit.notes.slice(0, 8000), due: edit.due || null });
-    if (time || edit.time !== undefined) await saveTime(supabase, taskId, time);
+    await saveTaskSchedule(supabase, taskId, { title, due: edit.due || null, time, remind });
   });
 }
 
@@ -79,6 +92,7 @@ export async function deleteTodoTask(listId: string, taskId: string): Promise<To
   return attempt(async () => {
     const { supabase, provider: p } = await provider();
     await deleteTask(supabase, p, listId, taskId);
+    await forgetTask(supabase, taskId);
   });
 }
 

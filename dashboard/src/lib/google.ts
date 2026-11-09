@@ -305,3 +305,26 @@ export async function createEvent(db: SupabaseClient, input: NewEvent) {
 function sortKey(e: CalendarEvent) {
   return e.allDay ? `${e.start} ` : e.start.slice(0, 19);
 }
+
+/**
+ * A raw write to the Calendar API on the owner's behalf (for task reminders).
+ * Returns null on 404/410 so a removed event can be treated as gone.
+ */
+export async function calendarWrite<T>(db: SupabaseClient, method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T | null> {
+  const token = await accessToken(db);
+  const res = await fetch(`${CALENDAR_API}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (res.status === 404 || res.status === 410) return null;
+  if (res.status === 204) return {} as T;
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new GoogleNotConnected("Google rejected the access token");
+  if (res.status === 403 && /insufficient|scope/i.test(json.error?.message ?? "")) {
+    throw new GoogleNeedsReconnect("Reconnect Google Calendar to allow reminders");
+  }
+  if (!res.ok) throw new Error(`Google Calendar error: ${json.error?.message ?? res.status}`);
+  return json as T;
+}
