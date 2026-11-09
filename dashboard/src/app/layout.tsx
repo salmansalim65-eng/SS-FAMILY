@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { AppLock } from "@/components/app-lock";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LOCK_BOOT_SCRIPT } from "@/lib/app-lock";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -24,8 +26,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: LOCK_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-dvh font-sans antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          {children}
+          <AppLock />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import { googleConnection } from "@/lib/google";
 import { microsoftConnection } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AppLockSettings } from "@/components/app-lock";
 import { AppsEditor } from "./apps-editor";
 import { CardsEditor } from "./cards-editor";
 import { GoogleCalendarSettings } from "./google-calendar";
@@ -36,6 +37,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <SettingsBlock id="general" title="General">
         <GeneralForm settings={settings} />
+      </SettingsBlock>
+
+      <SettingsBlock id="lock" title="Fingerprint lock" hint="Asks for your fingerprint each time the dashboard opens on this device.">
+        <AppLockSettings email={user.email ?? "owner"} />
       </SettingsBlock>
 
       <SettingsBlock id="calendar" title="Google (Calendar & Tasks)" hint="Your week and upcoming events, adding events, and your Google Tasks in the Tasks panel.">
