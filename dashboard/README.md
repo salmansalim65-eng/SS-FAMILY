@@ -16,8 +16,9 @@ as its own Vercel project. It does not touch the SS Family app.
 | Section | What it does |
 | --- | --- |
 | Top bar | Every icon in one sticky bar — projects (SSA, VISTA, RMI, MBL, SS Family) then personal (Mera, Google Calendar, Microsoft To Do); tap → opens in a new tab. Live Asia/Karachi date and time, theme toggle, settings, sign out |
-| Reports | 3–5 KPI cards per project: big number, trend vs last month, last-updated time. Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
-| Calendar | Your Google Calendar: week and schedule views, + Event |
+| Schedule (left) | Your Google Calendar as a slim upcoming list, + to add an event, **Week** opens the full week grid |
+| Projects (middle) | KPI cards grouped per project under its logo: big number, trend vs last month, last-updated time. Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
+| To Do and Notes (right) | Open Microsoft To Do tasks (add, tick off, due dates) above your sticky notes |
 | Settings | Currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
 
 ## How it's put together
@@ -244,6 +245,31 @@ dragged into order, and switched between text and checklist. In a checklist,
 Enter adds the next item and Backspace on an empty item removes it; ticked
 items move below the open ones.
 
+### 7. Microsoft To Do
+
+The To Do panel shows every open task from your Microsoft To Do lists
+(flagged emails left out), soonest due first; you can add a task (with a
+due date and list) and tick tasks off.
+
+One-time setup:
+
+1. [Azure portal](https://portal.azure.com) → **App registrations → New
+   registration**. Name "My Dashboard"; supported account types **Accounts in
+   any organizational directory and personal Microsoft accounts**; redirect
+   URI **Web** → `https://<your-dashboard>/api/microsoft/callback`.
+2. **Certificates & secrets → New client secret** → copy its **Value**.
+3. **API permissions → Add → Microsoft Graph → Delegated**: `Tasks.ReadWrite`
+   (`User.Read`, `openid`, `email`, `offline_access` come along).
+4. On Vercel set `MICROSOFT_CLIENT_ID` (the **Application (client) ID**) and
+   `MICROSOFT_CLIENT_SECRET`, then redeploy. `TOKEN_ENCRYPTION_KEY` is shared
+   with Google.
+5. Dashboard → **Settings → Microsoft To Do → Connect** (or the button in the
+   To Do panel).
+
+The refresh token is stored encrypted in `dashboard_oauth_tokens` like
+Google's and rotated on every refresh. **Disconnect** forgets it; to remove
+the grant from the account too, use account.live.com/consent.
+
 ---
 
 ## Deploy on Vercel
@@ -259,23 +285,3 @@ items move below the open ones.
    Configuration (Site URL + `/auth/callback` redirect) and into `SITE_URL`.
 
 Changing an env var on Vercel needs a redeploy to take effect.
-
----
-
-## Phase 2 — still to do
-
-### Microsoft To Do (Microsoft Graph)
-
-1. Azure portal → **App registrations → New registration**; account type
-   "Personal Microsoft accounts" (or work + personal if To Do is on a work account).
-2. Redirect URI (Web): `https://your-dashboard.vercel.app/api/microsoft/callback`.
-3. API permissions → Microsoft Graph → Delegated: `Tasks.ReadWrite`
-   (`Tasks.Read` is enough to list, but marking a task done needs ReadWrite),
-   plus `offline_access` and `User.Read`.
-4. Certificates & secrets → new client secret.
-5. Env: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`
-   (`consumers` for a personal account, `common` for both).
-6. Code to add: connect/callback routes, token storage in the same table,
-   `/api/todo` (`GET /me/todo/lists`, then
-   `GET /me/todo/lists/{id}/tasks?$filter=status ne 'completed'`) and a
-   "mark done" route (`PATCH …/tasks/{id}` with `{"status":"completed"}`).

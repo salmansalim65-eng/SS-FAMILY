@@ -80,12 +80,28 @@ function useNow(intervalMs = 60_000) {
   return now;
 }
 
-export function CalendarEvents({ fallback }: { fallback?: React.ReactNode }) {
+/**
+ * Google Calendar on the dashboard. `slim` is the narrow side-column form: the
+ * schedule list only, with a button that opens the full week view on top.
+ */
+export function CalendarEvents({
+  fallback,
+  slim = false,
+  initialView,
+  onClose,
+}: {
+  fallback?: React.ReactNode;
+  slim?: boolean;
+  initialView?: View;
+  onClose?: () => void;
+}) {
   const now = useNow();
   const today = karachiToday(now);
   const todayKey = ymdKey(today);
 
-  const [view, setView] = useState<View>("week");
+  const [chosenView, setView] = useState<View>(initialView ?? "week");
+  const view: View = slim ? "schedule" : chosenView;
+  const [expanded, setExpanded] = useState(false);
   const [anchor, setAnchor] = useState<Ymd>(() => weekStart(karachiToday()));
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,13 +111,14 @@ export function CalendarEvents({ fallback }: { fallback?: React.ReactNode }) {
 
   // Remembered per browser; phones start on the schedule list.
   useEffect(() => {
+    if (slim || initialView) return;
     let saved: string | null = null;
     try {
       saved = localStorage.getItem(VIEW_KEY);
     } catch {}
     if (saved === "week" || saved === "schedule") setView(saved);
     else if (window.matchMedia("(max-width: 767px)").matches) setView("schedule");
-  }, []);
+  }, [slim, initialView]);
 
   const chooseView = (v: View) => {
     setView(v);
@@ -184,7 +201,7 @@ export function CalendarEvents({ fallback }: { fallback?: React.ReactNode }) {
             </div>
           </>
         )}
-        <h3 className="font-medium">{view === "week" ? rangeLabel(anchor, weekEnd) : "Upcoming"}</h3>
+        <h3 className="font-medium">{slim ? "Schedule" : view === "week" ? rangeLabel(anchor, weekEnd) : "Upcoming"}</h3>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -192,27 +209,44 @@ export function CalendarEvents({ fallback }: { fallback?: React.ReactNode }) {
               const hour = Math.min(Math.floor(minutesNow(now) / 60) + 1, 23);
               setDraft({ date: todayKey, start: `${pad(hour)}:00` });
             }}
-            className="rounded-full bg-accent px-3 py-1 text-sm font-medium text-white hover:opacity-90"
+            aria-label="New event"
+            className={`rounded-full bg-accent font-medium text-white hover:opacity-90 ${slim ? "px-2.5 py-0.5 text-xs" : "px-3 py-1 text-sm"}`}
           >
-            + Event
+            {slim ? "+" : "+ Event"}
           </button>
           <button type="button" onClick={load} className="px-1 text-xs text-muted hover:text-fg" aria-label="Refresh calendar">
             ↻
           </button>
-          <div className="flex rounded-full border border-line p-0.5 text-xs" role="tablist" aria-label="Calendar view">
-            {(["week", "schedule"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                role="tab"
-                aria-selected={view === v}
-                onClick={() => chooseView(v)}
-                className={`rounded-full px-3 py-1 capitalize ${view === v ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          {slim && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="rounded-full border border-line px-2.5 py-0.5 text-xs text-muted hover:text-fg"
+            >
+              Week
+            </button>
+          )}
+          {onClose && (
+            <button type="button" onClick={onClose} className="px-1 text-muted hover:text-fg" aria-label="Close">
+              ✕
+            </button>
+          )}
+          {!slim && (
+            <div className="flex rounded-full border border-line p-0.5 text-xs" role="tablist" aria-label="Calendar view">
+              {(["week", "schedule"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v}
+                  onClick={() => chooseView(v)}
+                  className={`rounded-full px-3 py-1 capitalize ${view === v ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -235,8 +269,19 @@ export function CalendarEvents({ fallback }: { fallback?: React.ReactNode }) {
               onPick={(date, minutes) => setDraft({ date, start: `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}` })}
             />
           ) : (
-            <ScheduleView start={today} events={events} todayKey={todayKey} />
+            <ScheduleView start={today} events={events} todayKey={todayKey} slim={slim} />
           )}
+        </div>
+      )}
+
+      {expanded && (
+        <div
+          className="fixed inset-0 z-40 overflow-y-auto bg-black/40 p-3 sm:p-6"
+          onMouseDown={(e) => e.target === e.currentTarget && setExpanded(false)}
+        >
+          <div className="mx-auto max-w-6xl">
+            <CalendarEvents initialView="week" onClose={() => setExpanded(false)} />
+          </div>
         </div>
       )}
 
@@ -591,7 +636,17 @@ function WeekView({
 // Schedule: upcoming days that have something on, like the phone widget.
 // ---------------------------------------------------------------------------
 
-function ScheduleView({ start, events, todayKey }: { start: Ymd; events: CalendarEvent[]; todayKey: string }) {
+function ScheduleView({
+  start,
+  events,
+  todayKey,
+  slim = false,
+}: {
+  start: Ymd;
+  events: CalendarEvent[];
+  todayKey: string;
+  slim?: boolean;
+}) {
   const days = Array.from({ length: SCHEDULE_DAYS }, (_, i) => addDays(start, i))
     .map((d) => ({ day: d, key: ymdKey(d), list: events.filter((e) => onDay(e, ymdKey(d))) }))
     .filter((d) => d.list.length > 0);
@@ -600,7 +655,7 @@ function ScheduleView({ start, events, todayKey }: { start: Ymd; events: Calenda
 
   let lastMonth = -1;
   return (
-    <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
+    <div className={`space-y-3 overflow-y-auto pr-1 ${slim ? "max-h-[calc(100vh-14rem)] min-h-64" : "max-h-[560px]"}`}>
       {days.map(({ day, key, list }) => {
         const isToday = key === todayKey;
         const monthHeading = day.m !== lastMonth && lastMonth !== -1;
@@ -609,7 +664,7 @@ function ScheduleView({ start, events, todayKey }: { start: Ymd; events: Calenda
           <div key={key}>
             {monthHeading && <p className="mb-2 mt-4 text-sm font-semibold">{monthFmt.format(utc(day))}</p>}
             <div className="flex gap-3">
-              <div className="w-10 shrink-0 pt-1 text-center">
+              <div className={`${slim ? "w-8" : "w-10"} shrink-0 pt-1 text-center`}>
                 <div className={`text-[11px] ${isToday ? "text-accent" : "text-muted"}`}>{weekdayFmt.format(utc(day))}</div>
                 <div
                   className={`mx-auto grid size-8 place-items-center rounded-full text-base ${
@@ -622,7 +677,7 @@ function ScheduleView({ start, events, todayKey }: { start: Ymd; events: Calenda
               <ul className="min-w-0 flex-1 space-y-1.5">
                 {list.map((e) => (
                   <li key={e.id}>
-                    <EventLink event={e} className="block rounded-xl px-3 py-2 hover:brightness-110">
+                    <EventLink event={e} className={`block rounded-xl hover:brightness-110 ${slim ? "px-2.5 py-1.5" : "px-3 py-2"}`}>
                       <span className="block truncate text-sm font-medium">{e.title}</span>
                       <span className="block truncate text-xs opacity-85">
                         {timeRange(e)}

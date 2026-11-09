@@ -82,3 +82,15 @@ export type Note = {
   sort_order: number;
   updated_at: string;
 };
+
+export type TodoList = { id: string; name: string; isDefault: boolean };
+
+export type TodoTask = {
+  id: string;
+  listId: string;
+  listName: string;
+  title: string;
+  important: boolean;
+  due: string | null; // YYYY-MM-DD, Asia/Karachi
+  created: string | null;
+};

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { disconnectGoogle } from "@/lib/google";
+import { disconnectMicrosoft } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
 import type { CardFilter } from "@/lib/types";
 
@@ -192,6 +193,13 @@ export async function deleteCard(id: string) {
 }
 
 // ---------------------------------------------------------------- google
+export async function disconnectMicrosoftTodo() {
+  return run(async () => {
+    const { supabase } = await requireOwner();
+    await disconnectMicrosoft(supabase);
+  });
+}
+
 export async function disconnectGoogleCalendar() {
   return run(async () => {
     const { supabase } = await requireOwner();
