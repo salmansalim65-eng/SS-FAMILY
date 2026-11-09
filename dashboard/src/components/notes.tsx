@@ -368,9 +368,7 @@ function NoteCard({
           </button>
         )}
         <span className="ml-auto truncate" aria-live="polite">
-          {dictation.error ? (
-            <span className="text-danger">{dictation.error}</span>
-          ) : dictation.listening ? (
+          {dictation.listening ? (
             "Listening…"
           ) : status === "saving" ? (
             "Saving…"
@@ -384,6 +382,11 @@ function NoteCard({
           🗑
         </button>
       </div>
+      {dictation.error && (
+        <p className="mt-1.5 rounded-lg bg-danger-soft px-2 py-1 text-[11px] leading-snug text-danger" role="alert">
+          {dictation.error}
+        </p>
+      )}
     </li>
   );
 }
