@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { addCalendarEvent } from "@/app/calendar/actions";
 import { addDays, karachiToday, type Ymd } from "@/lib/time";
 import type { CalendarEvent } from "@/lib/types";
+import { onDashboardRefresh } from "@/lib/refresh-event";
 
 const REFRESH_MS = 10 * 60 * 1000;
 const SCHEDULE_DAYS = 14;
@@ -156,7 +157,11 @@ export function CalendarEvents({
   useEffect(() => {
     load();
     const t = setInterval(load, REFRESH_MS);
-    return () => clearInterval(t);
+    const off = onDashboardRefresh(load);
+    return () => {
+      clearInterval(t);
+      off();
+    };
   }, [load]);
 
   if (!connected) {

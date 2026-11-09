@@ -6,6 +6,7 @@ import { TIME_ZONE } from "@/lib/time";
 import type { CardFormat, CardResult } from "@/lib/types";
 import { AppGlyph } from "./app-icon";
 import { Section } from "./section";
+import { onDashboardRefresh } from "@/lib/refresh-event";
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
@@ -84,7 +85,11 @@ export function Reports({
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, AUTO_REFRESH_MS);
-    return () => clearInterval(t);
+    const off = onDashboardRefresh(refresh);
+    return () => {
+      clearInterval(t);
+      off();
+    };
   }, [refresh]);
 
   const anyLoading = projects.some((p) => state[p]?.loading);
