@@ -16,9 +16,8 @@ as its own Vercel project. It does not touch the SS Family app.
 | Section | What it does |
 | --- | --- |
 | Top bar | Every icon in one sticky bar — projects (SSA, VISTA, RMI, MBL, SS Family) then personal (Mera, Google Calendar, Microsoft To Do); tap → opens in a new tab. Live Asia/Karachi date and time, theme toggle, settings, sign out |
-| Schedule (left) | Your Google Calendar as a slim upcoming list, + to add an event, **Week** opens the full week grid |
-| Projects (middle) | KPI cards grouped per project under its logo: big number, trend vs last month, last-updated time. Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
-| To Do and Notes (right) | Open Microsoft To Do tasks (add, tick off, due dates) above your sticky notes |
+| Schedule · To Do · Notes | One row of three panels: this week's Google Calendar (+ to add an event, **Week** opens the full week grid), open Microsoft To Do tasks (add, tick off, due dates) and your sticky notes |
+| Projects | Compact KPI cards grouped per project under its logo, up to six to a row: the main figure with sub-rows (Dr/Cr, overdue, budget…). Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
 | Settings | Currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
 
 ## How it's put together

@@ -41,31 +41,25 @@ export default async function Home() {
         <AppDock groups={[projects, personal]} />
       </Header>
 
-      {/* Three columns on wide screens: schedule | project cards | to-do and notes.
-          On phones: schedule, to-do and notes, then the project cards. */}
-      <div className="grid items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)_19rem]">
-        <aside className="min-w-0 lg:col-start-1 lg:row-start-1">
-          <CalendarEvents
-            slim
-            fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
-          />
-        </aside>
-
-        <aside className="min-w-0 space-y-6 lg:col-start-3 lg:row-start-1">
-          <Todos />
+      {/* The day at a glance: this week's schedule, to-do and notes side by side. */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <CalendarEvents
+          slim
+          fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
+        />
+        <Todos />
+        <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm md:col-span-2 xl:col-span-1">
           <Notes initial={notes} column />
-        </aside>
-
-        <div className="min-w-0 lg:col-start-2 lg:row-start-1">
-          <Reports
-            cards={cardMeta}
-            currency={settings.currency}
-            color={color}
-            apps={appByKey}
-            order={[...projects, ...personal].map((a) => projectKey(a.name))}
-          />
         </div>
       </div>
+
+      <Reports
+        cards={cardMeta}
+        currency={settings.currency}
+        color={color}
+        apps={appByKey}
+        order={[...projects, ...personal].map((a) => projectKey(a.name))}
+      />
     </main>
   );
 }

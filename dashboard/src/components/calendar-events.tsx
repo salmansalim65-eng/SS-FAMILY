@@ -7,6 +7,7 @@ import type { CalendarEvent } from "@/lib/types";
 
 const REFRESH_MS = 10 * 60 * 1000;
 const SCHEDULE_DAYS = 14;
+const SLIM_DAYS = 7;
 const HOUR_PX = 48;
 const VIEW_KEY = "dashboard.calendarView";
 
@@ -128,7 +129,7 @@ export function CalendarEvents({
   };
 
   const from = view === "week" ? anchor : today;
-  const days = view === "week" ? 7 : SCHEDULE_DAYS;
+  const days = view === "week" ? 7 : slim ? SLIM_DAYS : SCHEDULE_DAYS;
   const key = `${ymdKey(from)}/${days}`;
 
   const latest = useRef(key);
@@ -180,7 +181,7 @@ export function CalendarEvents({
   const weekEnd = addDays(anchor, 6);
 
   return (
-    <section className="rounded-2xl border border-line bg-surface p-3 shadow-sm sm:p-4">
+    <section className="h-full rounded-2xl border border-line bg-surface p-3 shadow-sm sm:p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {view === "week" && (
           <>
@@ -647,15 +648,16 @@ function ScheduleView({
   todayKey: string;
   slim?: boolean;
 }) {
-  const days = Array.from({ length: SCHEDULE_DAYS }, (_, i) => addDays(start, i))
+  const days = Array.from({ length: slim ? SLIM_DAYS : SCHEDULE_DAYS }, (_, i) => addDays(start, i))
     .map((d) => ({ day: d, key: ymdKey(d), list: events.filter((e) => onDay(e, ymdKey(d))) }))
     .filter((d) => d.list.length > 0);
 
-  if (days.length === 0) return <p className="py-6 text-center text-sm text-muted">Nothing scheduled for the next two weeks.</p>;
+  if (days.length === 0)
+    return <p className="py-6 text-center text-sm text-muted">Nothing scheduled for the next {slim ? "week" : "two weeks"}.</p>;
 
   let lastMonth = -1;
   return (
-    <div className={`space-y-3 overflow-y-auto pr-1 ${slim ? "max-h-[calc(100vh-14rem)] min-h-64" : "max-h-[560px]"}`}>
+    <div className={`space-y-3 overflow-y-auto pr-1 ${slim ? "h-80" : "max-h-[560px]"}`}>
       {days.map(({ day, key, list }) => {
         const isToday = key === todayKey;
         const monthHeading = day.m !== lastMonth && lastMonth !== -1;

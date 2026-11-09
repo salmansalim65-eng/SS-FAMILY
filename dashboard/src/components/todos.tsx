@@ -96,7 +96,7 @@ export function Todos() {
   const tomorrow = ymd(addDays(karachiToday(), 1));
 
   return (
-    <section className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+    <section className="h-full rounded-2xl border border-line bg-surface p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-semibold">
           <span className="grid size-6 place-items-center rounded-md bg-[#2564cf] text-xs text-white">✓</span>
@@ -180,7 +180,7 @@ export function Todos() {
           {state.tasks.length === 0 ? (
             <p className="py-2 text-sm text-muted">All done — no open tasks.</p>
           ) : (
-            <ul className="max-h-80 space-y-0.5 overflow-y-auto pr-1">
+            <ul className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
               {state.tasks.map((t) => {
                 const isDone = done.has(t.id);
                 const label = t.due ? dueLabel(t.due, today, tomorrow) : null;
