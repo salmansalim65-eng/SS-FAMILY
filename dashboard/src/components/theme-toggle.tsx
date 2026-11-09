@@ -14,7 +14,7 @@ export function ThemeToggle() {
       type="button"
       onClick={() => setTheme(dark ? "light" : "dark")}
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-      className="flex size-10 items-center justify-center rounded-full border border-line bg-surface text-lg hover:bg-surface-2"
+      className="flex size-9 items-center justify-center rounded-full border border-line bg-surface text-base hover:bg-surface-2"
     >
       <span aria-hidden>{mounted ? (dark ? "☀︎" : "☾") : ""}</span>
     </button>
