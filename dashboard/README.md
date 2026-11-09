@@ -250,7 +250,12 @@ items move below the open ones.
 
 The Tasks panel uses **Google Tasks** through the Google connection above
 (enable the Google Tasks API and add the `tasks` scope, then Reconnect).
-Google Tasks lists can't be shared and tasks can't be assigned on personal
+Tick a task's box to complete it (it moves to **Completed**, which keeps the
+last week's tasks and can be unticked); click its title to open it and edit
+the title, notes and due date, pick a colour, mark it done or delete it.
+Colours are kept by the dashboard in `dashboard_task_colors` (run
+`supabase/migrations/20261109110000_dashboard_task_colors.sql`), since
+Google Tasks has none. Google Tasks lists can't be shared and tasks can't be assigned on personal
 Gmail accounts, and the API offers neither.
 
 #### Microsoft To Do (optional)

@@ -1,8 +1,16 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasScope, TASKS_SCOPE } from "@/lib/google";
-import { addGoogleTask, createGoogleTaskList, listGoogleTasks, setGoogleTaskDone } from "@/lib/google-tasks";
-import { addTodo, listTodos, setTodoDone } from "@/lib/microsoft";
+import {
+  addGoogleTask,
+  createGoogleTaskList,
+  deleteGoogleTask,
+  listGoogleTasks,
+  setGoogleTaskDone,
+  updateGoogleTask,
+} from "@/lib/google-tasks";
+import { addTodo, deleteTodo, listTodos, setTodoDone, updateTodo } from "@/lib/microsoft";
+import type { TodoTaskEdit } from "@/lib/types";
 
 // The To Do panel's source: Google Tasks when the Google connection has the
 // tasks scope, else Microsoft To Do when that is connected.
@@ -28,6 +36,14 @@ export function addTask(db: SupabaseClient, provider: TodoProvider, listId: stri
 
 export function setTaskDone(db: SupabaseClient, provider: TodoProvider, listId: string, taskId: string, done: boolean) {
   return provider === "google" ? setGoogleTaskDone(db, listId, taskId, done) : setTodoDone(db, listId, taskId, done);
+}
+
+export function updateTask(db: SupabaseClient, provider: TodoProvider, listId: string, taskId: string, edit: TodoTaskEdit) {
+  return provider === "google" ? updateGoogleTask(db, listId, taskId, edit) : updateTodo(db, listId, taskId, edit);
+}
+
+export function deleteTask(db: SupabaseClient, provider: TodoProvider, listId: string, taskId: string) {
+  return provider === "google" ? deleteGoogleTask(db, listId, taskId) : deleteTodo(db, listId, taskId);
 }
 
 export function createList(db: SupabaseClient, provider: TodoProvider, name: string) {

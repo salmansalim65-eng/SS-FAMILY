@@ -3,8 +3,10 @@
 import { GoogleNotConnected } from "@/lib/google";
 import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
-import { addTask, createList, setTaskDone, todoProvider } from "@/lib/todo";
-import type { TodoList } from "@/lib/types";
+import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
+import type { NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
+
+const COLORS: NoteColor[] = ["yellow", "pink", "green", "blue", "purple", "orange"];
 
 export type TodoResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -43,6 +45,36 @@ export async function setTodoTaskDone(listId: string, taskId: string, done: bool
   return attempt(async () => {
     const { supabase, provider: p } = await provider();
     await setTaskDone(supabase, p, listId, taskId, done);
+  });
+}
+
+export async function updateTodoTask(listId: string, taskId: string, edit: TodoTaskEdit): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const title = edit.title.trim().slice(0, 255);
+    if (!title) throw new Error("A task needs a title.");
+    if (edit.due && !DATE.test(edit.due)) throw new Error("That due date is not valid.");
+    const { supabase, provider: p } = await provider();
+    await updateTask(supabase, p, listId, taskId, { title, notes: edit.notes.slice(0, 8000), due: edit.due || null });
+  });
+}
+
+export async function deleteTodoTask(listId: string, taskId: string): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const { supabase, provider: p } = await provider();
+    await deleteTask(supabase, p, listId, taskId);
+  });
+}
+
+/** The dashboard's own colour for a task; null clears it. */
+export async function setTodoTaskColor(taskId: string, color: NoteColor | null): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const { supabase } = await requireOwner();
+    if (!taskId || taskId.length > 200) throw new Error("Unknown task.");
+    if (color && !COLORS.includes(color)) throw new Error("Unknown colour.");
+    const { error } = color
+      ? await supabase.from("dashboard_task_colors").upsert({ task_id: taskId, color })
+      : await supabase.from("dashboard_task_colors").delete().eq("task_id", taskId);
+    if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "Task colours aren't set up yet." : error.message);
   });
 }
 

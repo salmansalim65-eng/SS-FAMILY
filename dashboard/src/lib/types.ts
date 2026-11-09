@@ -111,4 +111,10 @@ export type TodoTask = {
   important: boolean;
   due: string | null; // YYYY-MM-DD, Asia/Karachi
   created: string | null;
+  notes: string | null;
+  done: boolean; // completed in the last week (shown under "Completed")
+  color?: NoteColor | null; // kept by the dashboard, not the task service
 };
+
+/** What the task detail can change. */
+export type TodoTaskEdit = { title: string; notes: string; due: string | null };
