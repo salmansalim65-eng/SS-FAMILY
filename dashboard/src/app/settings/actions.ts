@@ -27,12 +27,17 @@ function num(form: FormData, key: string) {
   return n;
 }
 
-function httpUrl(value: string, label: string) {
+// Desktop apps an icon may open by their link scheme, e.g. whatsapp://.
+// Mirrors dashboard_apps_url_check.
+const APP_SCHEMES = new Set(["whatsapp:", "msteams:", "skype:", "zoommtg:", "tg:", "mailto:", "tel:"]);
+
+function httpUrl(value: string, label: string, allowApps = false) {
   try {
     const u = new URL(value);
     if (u.protocol === "https:" || u.protocol === "http:") return u.toString();
+    if (allowApps && APP_SCHEMES.has(u.protocol)) return value.trim();
   } catch {}
-  throw new Error(`${label} must be a full http(s) URL`);
+  throw new Error(`${label} must be a full http(s) URL${allowApps ? " or an app link such as whatsapp://" : ""}`);
 }
 
 async function run(fn: () => Promise<void>): Promise<ActionResult> {
@@ -79,7 +84,7 @@ export async function saveApp(form: FormData) {
 
     const row = {
       name,
-      url: httpUrl(str(form, "url"), "Link"),
+      url: httpUrl(str(form, "url"), "Link", true),
       icon: optional(form, "icon"),
       color,
       category,

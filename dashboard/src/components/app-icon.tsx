@@ -52,8 +52,7 @@ export function AppDock({ groups }: { groups: DashboardApp[][] }) {
               <li key={app.id}>
                 <a
                   href={app.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  {...(/^https?:/i.test(app.url) ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                   title={app.name}
                   className="group flex w-[3.85rem] flex-col sm:w-[4.25rem] items-center gap-1.5 rounded-2xl p-1 outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
