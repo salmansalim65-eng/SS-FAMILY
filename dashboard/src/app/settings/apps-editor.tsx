@@ -135,7 +135,7 @@ function AppForm({ app, category, onDone }: { app?: DashboardApp; category: AppC
           <input name="name" required defaultValue={app?.name} onChange={(e) => setPreview({ ...preview, name: e.target.value })} className={inputCls} />
         </Field>
         <Field label="Link (URL)">
-          <input name="url" type="url" required defaultValue={app?.url} placeholder="https://" className={inputCls} />
+          <input name="url" type="text" inputMode="url" required defaultValue={app?.url} placeholder="https://… or whatsapp://" className={inputCls} />
         </Field>
         <Field label="Icon" hint="Initials or an emoji, or an image URL. Blank = initials of the name.">
           <input name="icon" defaultValue={app?.icon ?? ""} onChange={(e) => setPreview({ ...preview, icon: e.target.value })} className={inputCls} />
