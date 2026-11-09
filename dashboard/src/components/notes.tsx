@@ -15,6 +15,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createNote, deleteNote, reorderNotes, updateNote, type NotePatch } from "@/app/notes/actions";
 import type { ChecklistItem, Note, NoteColor } from "@/lib/types";
+import { toRomanUrdu } from "@/lib/roman-urdu";
 import { DICTATION_LANGS, useDictation } from "./dictation";
 import { Section } from "./section";
 
@@ -45,14 +46,14 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
   const [status, setStatus] = useState<Record<string, SaveState>>({});
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [lang, setLang] = useState<string>(DICTATION_LANGS[0].code);
+  const [lang, setLang] = useState<string>(DICTATION_LANGS[0].id);
   const pending = useRef(new Map<string, NotePatch>());
 
   // Dictation language, remembered per browser.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LANG_KEY);
-      if (saved && DICTATION_LANGS.some((l) => l.code === saved)) setLang(saved);
+      if (saved && DICTATION_LANGS.some((l) => l.id === saved)) setLang(saved);
     } catch {}
   }, []);
   function chooseLang(code: string) {
@@ -160,11 +161,11 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
       <div className="flex rounded-full border border-line p-0.5 text-xs" role="group" aria-label="Dictation language" title="Language for 🎤 dictation">
         {DICTATION_LANGS.map((l) => (
           <button
-            key={l.code}
+            key={l.id}
             type="button"
-            onClick={() => chooseLang(l.code)}
-            aria-pressed={lang === l.code}
-            className={`rounded-full px-2 py-0.5 ${lang === l.code ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+            onClick={() => chooseLang(l.id)}
+            aria-pressed={lang === l.id}
+            className={`rounded-full px-2 py-0.5 ${lang === l.id ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
           >
             {l.label}
           </button>
@@ -245,7 +246,9 @@ function NoteCard({
   // checklist item. The ref keeps the latest note for the async callback.
   const latest = useRef(note);
   latest.current = note;
-  const dictation = useDictation(lang, (text) => {
+  const langDef = DICTATION_LANGS.find((l) => l.id === lang) ?? DICTATION_LANGS[0];
+  const dictation = useDictation(langDef.speech, (spoken) => {
+    const text = langDef.roman ? toRomanUrdu(spoken) : spoken;
     const n = latest.current;
     if (n.kind === "text") {
       const body = n.body && !/\s$/.test(n.body) ? `${n.body} ${text}` : `${n.body}${text}`;

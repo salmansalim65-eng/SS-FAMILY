@@ -36,17 +36,21 @@ function errorText(code: string, lang: string): string | null {
     case "network":
       // The browser sends the audio to its own speech service (Google for
       // Chrome, Microsoft for Edge); Brave, Opera, VPNs and firewalls block it.
-      return "This browser couldn't reach its speech service. Use Chrome, or press Win+H (Windows) / the keyboard mic (phone) to dictate.";
+      return "Couldn't reach the speech service. In Edge: Windows Settings → Privacy & security → Speech → turn on Online speech recognition. Or use Chrome, Win+H, or the phone keyboard's mic.";
     case "language-not-supported":
-      return `This browser can't dictate in ${lang.startsWith("ur") ? "Urdu" : "this language"}; try Chrome or switch to EN.`;
+      return `This browser can't dictate in ${lang.startsWith("ur") ? "Urdu" : lang.startsWith("hi") ? "Roman Urdu" : "this language"}; try Chrome or switch to EN.`;
     default:
       return `Dictation failed (${code}).`;
   }
 }
 
+// id: what the toggle stores; speech: the language the browser listens in.
+// Roman Urdu listens as Hindi (the same spoken language) and is romanised
+// afterwards, since browsers can't write Urdu in Latin letters themselves.
 export const DICTATION_LANGS = [
-  { code: "en-US", label: "EN" },
-  { code: "ur-PK", label: "اردو" },
+  { id: "en-US", speech: "en-US", label: "EN", roman: false },
+  { id: "roman", speech: "hi-IN", label: "Roman", roman: true },
+  { id: "ur-PK", speech: "ur-PK", label: "اردو", roman: false },
 ] as const;
 
 /** Start/stop dictation; each finished phrase is handed to `onText`. */

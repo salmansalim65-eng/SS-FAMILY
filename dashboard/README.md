@@ -240,7 +240,7 @@ Sticky notes and checklists live on the dashboard itself, in the
 `supabase/migrations/20261019120000_dashboard_notes.sql` in the dashboard's
 Supabase project once; until then the Notes section shows a setup hint.
 
-Notes save as you type and sync across devices. 🎤 on a note dictates into it (the browser's own speech recognition, Chrome / Edge / Safari); EN / اردو in the Notes header picks the language. Notes can be coloured, pinned (pinned notes stay first),
+Notes save as you type and sync across devices. 🎤 on a note dictates into it (the browser's own speech recognition, Chrome / Edge / Safari); EN / Roman / اردو in the Notes header picks the language (Roman Urdu listens as Hindi and is romanised). In Edge, Windows' *Online speech recognition* setting must be on. Notes can be coloured, pinned (pinned notes stay first),
 dragged into order, and switched between text and checklist. In a checklist,
 Enter adds the next item and Backspace on an empty item removes it; ticked
 items move below the open ones.
