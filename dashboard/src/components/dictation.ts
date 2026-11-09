@@ -47,11 +47,26 @@ function errorText(code: string, lang: string): string | null {
 // id: what the toggle stores; speech: the language the browser listens in.
 // Roman Urdu listens as Hindi (the same spoken language) and is romanised
 // afterwards, since browsers can't write Urdu in Latin letters themselves.
+/** Where the chosen dictation language is remembered (picked in the Notes header). */
+export const DICTATION_LANG_KEY = "dashboard.dictationLang";
+
 export const DICTATION_LANGS = [
   { id: "en-US", speech: "en-US", label: "EN", roman: false },
   { id: "roman", speech: "hi-IN", label: "Roman", roman: true },
   { id: "ur-PK", speech: "ur-PK", label: "اردو", roman: false },
 ] as const;
+
+export type DictationLang = (typeof DICTATION_LANGS)[number];
+
+/** The dictation language last picked in this browser (English if none). */
+export function savedDictationLang(): DictationLang {
+  try {
+    const id = localStorage.getItem(DICTATION_LANG_KEY);
+    return DICTATION_LANGS.find((l) => l.id === id) ?? DICTATION_LANGS[0];
+  } catch {
+    return DICTATION_LANGS[0];
+  }
+}
 
 /** Start/stop dictation; each finished phrase is handed to `onText`. */
 export function useDictation(lang: string, onText: (text: string) => void) {
@@ -70,12 +85,12 @@ export function useDictation(lang: string, onText: (text: string) => void) {
     setListening(false);
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback((speechLang?: string) => {
     const Ctor = recognitionClass();
     if (!Ctor) return;
     rec.current?.stop();
     const r = new Ctor();
-    r.lang = lang;
+    r.lang = speechLang ?? lang;
     r.continuous = true;
     r.interimResults = false;
     r.onresult = (e) => {
