@@ -1,4 +1,4 @@
-import { AppDock } from "@/components/app-icon";
+import { SidebarLayout } from "@/components/app-sidebar";
 import { CalendarEmbed } from "@/components/calendar-embed";
 import { CalendarEvents } from "@/components/calendar-events";
 import { Header } from "@/components/header";
@@ -41,35 +41,34 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
   }));
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 pb-10 sm:px-6">
-      <Header screen={screen}>
-        <AppDock groups={[projects, personal]} />
-      </Header>
+    <SidebarLayout groups={[projects, personal]}>
+      <main className="mx-auto max-w-7xl space-y-6 px-4 pb-10 sm:px-6">
+        <Header screen={screen} />
 
-      {/* The day at a glance: this week's schedule, to-do and notes side by side. */}
-      {screen !== "projects" && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <CalendarEvents
-            slim
-            fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
-          />
-          <Todos />
-          <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm md:col-span-2 xl:col-span-1">
-            <Notes initial={notes} column />
+        {/* The day at a glance: this week's schedule, to-do and notes side by side. */}
+        {screen !== "projects" && (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <CalendarEvents
+              slim
+              fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
+            />
+            <Todos />
+            <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm md:col-span-2 xl:col-span-1">
+              <Notes initial={notes} column />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {screen !== "day" && (
-        <Reports
-          cards={cardMeta}
-          currency={settings.currency}
-          color={color}
-          apps={appByKey}
-          order={[...projects, ...personal].map((a) => projectKey(a.name))}
-        />
-      )}
-    </main>
+        {screen !== "day" && (
+          <Reports
+            cards={cardMeta}
+            currency={settings.currency}
+            color={color}
+            apps={appByKey}
+            order={[...projects, ...personal].map((a) => projectKey(a.name))}
+          />
+        )}
+      </main>
+    </SidebarLayout>
   );
 }
-
