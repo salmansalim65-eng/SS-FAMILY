@@ -164,6 +164,8 @@ export async function saveCard(form: FormData) {
       throw new Error(query_type === "rpc" ? "Enter the function name" : "Enter the table name");
     }
     if (query_type === "sum" && !str(form, "value_column")) throw new Error("A sum card needs a value column");
+    const link = optional(form, "link");
+    if (link && !/^(\/|https?:\/\/)/.test(link)) throw new Error("Link must start with / (a page in the project's app) or https://");
 
     const row = {
       project,
@@ -180,6 +182,7 @@ export async function saveCard(form: FormData) {
       higher_is_better: form.get("higher_is_better") === "on",
       sort_order: num(form, "sort_order") ?? 100,
       is_active: form.get("is_active") === "on",
+      link,
     };
 
     const { error } = id

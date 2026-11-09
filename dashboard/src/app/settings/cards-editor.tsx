@@ -135,6 +135,9 @@ function CardForm({ card, onDone }: { card?: DashboardCard; onDone: () => void }
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Opens" hint="Report to open on click: a path in the project's app, e.g. /reports/cash-book, or a full https:// link">
+          <input name="link" defaultValue={card?.link ?? ""} placeholder="/reports/…" className={`${inputCls} font-mono`} />
+        </Field>
         <Field label="Order">
           <input name="sort_order" type="number" defaultValue={card?.sort_order ?? 100} className={inputCls} />
         </Field>
