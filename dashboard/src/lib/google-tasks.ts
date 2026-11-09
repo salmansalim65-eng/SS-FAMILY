@@ -106,35 +106,6 @@ export async function createGoogleTaskList(db: SupabaseClient, title: string): P
 }
 
 /**
- * Adds pasted tasks list by list: a list named in the paste is matched by
- * name (any case) and made when missing; tasks with no list go to the first
- * (default) list. Tasks are inserted last-first so they read in pasted order.
- */
-export async function importGoogleTasks(db: SupabaseClient, groups: { list: string | null; titles: string[] }[]) {
-  const token = await accessToken(db);
-  const res = await call<{ items?: GList[] }>(token, "/users/@me/lists?maxResults=100");
-  const lists = res.items ?? [];
-  const byName = new Map(lists.map((l) => [l.title.trim().toLowerCase(), l.id]));
-  const createdLists: string[] = [];
-  let added = 0;
-  for (const g of groups) {
-    let listId = g.list ? byName.get(g.list.trim().toLowerCase()) : lists[0]?.id;
-    if (!listId && g.list) {
-      const made = await call<GList>(token, "/users/@me/lists", { method: "POST", body: { title: g.list } });
-      listId = made.id;
-      byName.set(g.list.trim().toLowerCase(), made.id);
-      createdLists.push(made.title);
-    }
-    if (!listId) throw new Error("No task list to add to.");
-    for (const title of [...g.titles].reverse()) {
-      await call(token, `/lists/${encodeURIComponent(listId)}/tasks`, { method: "POST", body: { title } });
-      added++;
-    }
-  }
-  return { added, createdLists };
-}
-
-/**
  * Moves a task to another list and returns its id there. Uses Google's move
  * with a destination list; where that isn't accepted, copies the task (title,
  * notes, due date, done state) into the other list and deletes the original.
