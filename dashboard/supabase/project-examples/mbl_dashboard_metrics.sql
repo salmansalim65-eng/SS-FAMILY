@@ -239,3 +239,127 @@ grant execute on function public.home_dashboard_mbl_pnl(text), public.home_dashb
                           public.home_dashboard_mbl_customers(text), public.home_dashboard_mbl_liabilities(text),
                           public.home_dashboard_mbl_cashbank(text)
   to anon, authenticated;
+
+-- MBL Sales, Orders in hand and Customer balances in their original currency
+-- (US$), as the owner reads them; other currencies show as their own rows.
+
+create or replace function public.home_dashboard_mbl_usd_id()
+returns uuid language sql stable set search_path = public
+as $$ select id from public.currencies where upper(symbol) = 'USD' order by sort_order limit 1 $$;
+
+-- Export sales in US$ (transaction currency) for last month, this month and
+-- the year to date, plus the Local Sales Invoices in Rs.
+create or replace function public.home_dashboard_mbl_sales_usd(p_key text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  d date := current_date;
+  m_from date := date_trunc('month', d)::date;
+  l_from date := (date_trunc('month', d) - interval '1 month')::date;
+  l_to date := (date_trunc('month', d) - interval '1 day')::date;
+  y_from date := coalesce(
+    (select fy.start_date from public.fiscal_years fy where d between fy.start_date and fy.end_date order by fy.start_date limit 1),
+    make_date(case when extract(month from d) >= 7 then extract(year from d)::int else extract(year from d)::int - 1 end, 7, 1));
+  usd uuid := public.home_dashboard_mbl_usd_id();
+  r record;
+  f jsonb;
+begin
+  perform public.home_dashboard_check(p_key);
+  select
+    coalesce(sum(g.txn_credit - g.txn_debit) filter (where g.entry_date between y_from and d), 0) as ytd,
+    coalesce(sum(g.txn_credit - g.txn_debit) filter (where g.entry_date between m_from and d), 0) as this_month,
+    coalesce(sum(g.txn_credit - g.txn_debit) filter (where g.entry_date between l_from and l_to), 0) as last_month
+  into r
+  from public.gl_posted g
+  join public.accounts a on a.id = g.account_id
+  where a.account_type = 'sales' and g.txn_currency_id = usd and g.entry_date between least(y_from, l_from) and d;
+
+  select jsonb_object_agg(bucket, amount) into f
+  from public.dashboard_figures_unchecked(d) where tile = 'sales' and bucket = 'local_ytd';
+
+  return jsonb_build_object('value', r.ytd, 'unit', 'US$', 'note', 'Year to date',
+    'rows', jsonb_build_array(
+      jsonb_build_object('label', 'This month', 'value', r.this_month),
+      jsonb_build_object('label', 'Last month', 'value', r.last_month),
+      jsonb_build_object('label', 'Local (YTD)', 'value', (f->>'local_ytd')::numeric, 'unit', 'Rs')));
+end;
+$$;
+
+-- Open orders not yet invoiced, valued in each order's own currency.
+create or replace function public.home_dashboard_mbl_orders_usd(p_key text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  usd uuid := public.home_dashboard_mbl_usd_id();
+  v_usd numeric;
+  v_other numeric;
+  v_orders int;
+begin
+  perform public.home_dashboard_check(p_key);
+  select
+    coalesce(sum(case when dl.quantity <> 0 then pbl.balance_value * dl.gross / dl.quantity else 0 end)
+             filter (where d.currency_id = usd), 0),
+    coalesce(sum(case when dl.quantity <> 0 then pbl.balance_value * dl.gross / dl.quantity else 0 end
+                 * coalesce(d.exchange_rate, 1)) filter (where d.currency_id is distinct from usd), 0),
+    count(distinct pbl.base_document_id)
+  into v_usd, v_other, v_orders
+  from public.pending_base_lines pbl
+  join public.document_lines dl on dl.id = pbl.base_line_id
+  join public.documents d on d.id = pbl.base_document_id
+  where pbl.workflow_id in (select public.in_hand_workflows());
+
+  return jsonb_build_object('value', v_usd, 'unit', 'US$', 'note', 'Not yet invoiced',
+    'rows', jsonb_build_array(jsonb_build_object('label', 'Orders', 'plain', true, 'value', v_orders))
+            || case when abs(v_other) >= 0.5
+                    then jsonb_build_array(jsonb_build_object('label', 'In other currencies', 'value', v_other, 'unit', 'Rs'))
+                    else '[]'::jsonb end);
+end;
+$$;
+
+-- Customer balances in each account's own currency: what customers owe
+-- (positive balances) per currency, and advances (negative) in US$.
+create or replace function public.home_dashboard_mbl_customers_usd(p_key text)
+returns jsonb
+language plpgsql stable security definer set search_path = public
+as $$
+declare
+  usd uuid := public.home_dashboard_mbl_usd_id();
+  v_usd numeric;
+  v_adv numeric;
+  v_rows jsonb;
+begin
+  perform public.home_dashboard_check(p_key);
+  with nets as (
+    select a.id, coalesce(g.acct_currency_id, a.currency_id) as cur, sum(g.acct_debit - g.acct_credit) as net
+    from public.gl_posted g
+    join public.accounts a on a.id = g.account_id
+    where a.account_type = 'customer_vendor' and a.party_kind in ('customer', 'both') and g.entry_date <= current_date
+    group by a.id, coalesce(g.acct_currency_id, a.currency_id)
+  ),
+  per_cur as (
+    select n.cur, c.sort_order,
+           case upper(c.symbol) when 'AED' then 'AED' when 'RS' then 'Rs' else coalesce(c.symbol, '?') end as unit,
+           coalesce(sum(n.net) filter (where n.net > 0), 0) as owed,
+           coalesce(-sum(n.net) filter (where n.net < 0), 0) as advance
+    from nets n left join public.currencies c on c.id = n.cur
+    group by n.cur, c.symbol, c.sort_order
+  )
+  select
+    coalesce((select owed from per_cur where cur = usd), 0),
+    coalesce((select advance from per_cur where cur = usd), 0),
+    coalesce((select jsonb_agg(jsonb_build_object('label', 'Receivable ' || unit, 'value', owed, 'unit', unit) order by sort_order)
+              from per_cur where cur is distinct from usd and owed >= 0.005), '[]'::jsonb)
+  into v_usd, v_adv, v_rows;
+
+  return jsonb_build_object('value', v_usd, 'unit', 'US$', 'note', 'Receivable',
+    'rows', v_rows || jsonb_build_array(jsonb_build_object('label', 'Advances (US$)', 'value', v_adv)));
+end;
+$$;
+
+revoke all on function public.home_dashboard_mbl_usd_id() from public, anon, authenticated;
+revoke all on function public.home_dashboard_mbl_sales_usd(text), public.home_dashboard_mbl_orders_usd(text),
+                       public.home_dashboard_mbl_customers_usd(text) from public;
+grant execute on function public.home_dashboard_mbl_sales_usd(text), public.home_dashboard_mbl_orders_usd(text),
+                          public.home_dashboard_mbl_customers_usd(text) to anon, authenticated;

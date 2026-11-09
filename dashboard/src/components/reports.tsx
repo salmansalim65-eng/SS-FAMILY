@@ -22,6 +22,19 @@ export type ProjectApp = { name: string; icon: string | null; color: string; url
 
 type ProjectState = { loading: boolean; error: string | null; results: Record<string, CardResult> };
 
+/**
+ * Each project's cards dressed like its own dashboard: SSA's green and
+ * VISTA's teal header bands with centred capitals, RMI's gold band, MBL's
+ * blue. Projects not listed keep the plain card.
+ */
+type Theme = { header: string; accent: string; caps?: boolean };
+const THEMES: Record<string, Theme> = {
+  SSA: { header: "#1f7a2c", accent: "#1f7a2c", caps: true },
+  VISTA: { header: "#175c49", accent: "#175c49", caps: true },
+  RMI: { header: "linear-gradient(90deg, #8f6c2f, #ad8c4e)", accent: "#9c7a3c" },
+  MBL: { header: "linear-gradient(90deg, #0b6fb3, #1b95d8)", accent: "#0b80c8" },
+};
+
 const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", minute: "2-digit" });
 
 export function Reports({
@@ -95,12 +108,16 @@ export function Reports({
         {projects.map((project) => {
           const ps = state[project];
           const app = apps[project];
-          const accent = color[project] ?? "var(--accent)";
+          const theme = THEMES[project];
+          const accent = theme?.accent ?? color[project] ?? "var(--accent)";
           return (
             <div
               key={project}
-              className="space-y-2.5 rounded-2xl border border-line bg-surface-2/50 p-2.5 sm:p-3"
-              style={{ borderTop: `3px solid ${accent}` }}
+              className="space-y-2.5 rounded-2xl border border-line p-2.5 sm:p-3"
+              style={{
+                borderTop: `3px solid ${accent}`,
+                background: `color-mix(in srgb, ${accent} 6%, var(--surface-2))`,
+              }}
             >
               <h3 className="flex items-center gap-2.5 text-sm font-semibold">
                 {app ? <AppGlyph app={app} size="xs" /> : <span className="size-2.5 rounded-full" style={{ background: accent }} />}
@@ -120,6 +137,7 @@ export function Reports({
                   .map((card) => (
                     <KpiCard
                       key={card.id}
+                      theme={theme}
                       card={card}
                       currency={currency}
                       result={ps?.results[card.id]}
@@ -142,12 +160,14 @@ function updatedAt(ps: ProjectState | undefined) {
 }
 
 function KpiCard({
+  theme,
   card,
   result,
   loading,
   projectError,
   currency,
 }: {
+  theme?: Theme;
   card: CardMeta;
   result?: CardResult;
   loading: boolean;
@@ -163,18 +183,34 @@ function KpiCard({
       : detail?.unit || detail?.style || detail?.suffix
         ? formatAmount(result.value, detail.style, detail.unit, detail.suffix)
         : formatValue(result.value, card.format, currency);
-  const amount = (v: number | null, suffix?: string) =>
-    v == null ? "—" : formatAmount(v, detail?.style, detail?.unit, suffix);
+  const amount = (v: number | null, suffix?: string, unit?: string) =>
+    v == null ? "—" : formatAmount(v, detail?.style, unit ?? detail?.unit, suffix);
   const good = change == null ? null : change === 0 ? null : change > 0 === card.higher_is_better;
 
   return (
-    <article className="flex min-w-0 flex-col rounded-xl border border-line bg-surface p-2.5 shadow-sm sm:p-3" title={card.title}>
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="line-clamp-2 text-xs font-medium leading-tight text-muted">{card.title}</h4>
-        {result?.isSample && (
-          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">Sample</span>
-        )}
-      </div>
+    <article
+      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-surface shadow-sm ${theme ? "" : "border-line p-2.5 sm:p-3"}`}
+      style={theme ? { borderColor: `color-mix(in srgb, ${theme.accent} 35%, var(--line))` } : undefined}
+      title={card.title}
+    >
+      {theme ? (
+        <h4
+          className={`line-clamp-1 px-2.5 py-1.5 text-[11px] font-semibold leading-tight text-white ${
+            theme.caps ? "text-center uppercase tracking-wide" : ""
+          }`}
+          style={{ background: theme.header }}
+        >
+          {card.title}
+        </h4>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <h4 className="line-clamp-2 text-xs font-medium leading-tight text-muted">{card.title}</h4>
+          {result?.isSample && (
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">Sample</span>
+          )}
+        </div>
+      )}
+      <div className={theme ? "flex flex-1 flex-col p-2.5" : "contents"}>
 
       {loading ? (
         <div className="mt-2 space-y-2" aria-label="Loading">
@@ -203,7 +239,7 @@ function KpiCard({
                   <dd
                     className={`shrink-0 tabular-nums ${r.tone === "up" ? "text-up" : r.tone === "down" ? "text-down" : ""}`}
                   >
-                    {r.plain ? (r.value == null ? "—" : formatAmount(r.value, "full", undefined, r.suffix)) : amount(r.value, r.suffix)}
+                    {r.plain ? (r.value == null ? "—" : formatAmount(r.value, "full", undefined, r.suffix)) : amount(r.value, r.suffix, r.unit)}
                   </dd>
                 </div>
               ))}
@@ -211,10 +247,10 @@ function KpiCard({
           )}
           {detail?.progress != null && (
             <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2" aria-label={`${Math.round(detail.progress)}%`}>
-              <div className="h-full rounded-full bg-accent" style={{ width: `${detail.progress}%` }} />
+              <div className="h-full rounded-full bg-accent" style={{ width: `${detail.progress}%`, background: theme?.accent }} />
             </div>
           )}
-          {detail?.note && <p className="mt-1 truncate text-[10px] text-muted">{detail.note}</p>}
+          {detail?.note && !theme && <p className="mt-1 truncate text-[10px] text-muted">{detail.note}</p>}
           {change != null && (
             <p className="mt-1 text-[11px]">
               <span className={good == null ? "text-muted" : good ? "text-up" : "text-down"}>
@@ -224,6 +260,15 @@ function KpiCard({
             </p>
           )}
         </>
+      )}
+      </div>
+      {theme && detail?.note && !loading && !error && (
+        <p
+          className="truncate px-2.5 py-1 text-[10px] font-medium text-muted"
+          style={{ background: `color-mix(in srgb, ${theme.accent} 10%, var(--surface))` }}
+        >
+          {detail.note}
+        </p>
       )}
     </article>
   );
