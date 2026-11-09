@@ -114,6 +114,7 @@ function cardDetail(obj: Record<string, unknown>): CardDetail | undefined {
         label: text(r?.label) ?? "",
         value: num(r?.value),
         suffix: text(r?.suffix, 8),
+        unit: text(r?.unit, 6),
         tone: tone(r?.tone),
         plain: r?.plain === true || undefined,
       }))

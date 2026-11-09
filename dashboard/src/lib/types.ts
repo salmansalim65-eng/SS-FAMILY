@@ -50,7 +50,8 @@ export type CardDetail = {
   style?: "full" | "lakh" | "compact"; // 1,234,567 | 12.35 lakh | 1.2M
   suffix?: string; // after the main value, e.g. "Dr"
   tone?: "up" | "down"; // colours the main value
-  rows?: { label: string; value: number | null; suffix?: string; tone?: "up" | "down"; plain?: boolean }[];
+  // A row may carry its own unit when it is in another currency than the card.
+  rows?: { label: string; value: number | null; suffix?: string; unit?: string; tone?: "up" | "down"; plain?: boolean }[];
   progress?: number; // 0–100
   note?: string;
 };
