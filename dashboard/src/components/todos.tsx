@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoTask, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoTask, importTodoTasks, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
+import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { karachiToday, addDays } from "@/lib/time";
 import type { ListColor, NoteColor, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
@@ -144,6 +145,7 @@ export function Todos() {
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [detail, setDetail] = useState<TodoTask | null>(null);
   const [board, setBoard] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [pending, start] = useTransition();
 
   const load = useCallback(async () => {
@@ -264,6 +266,11 @@ export function Todos() {
           + List
         </button>
       )}
+      {ready?.provider === "google" && (
+        <button type="button" onClick={() => setImporting(true)} className="text-muted hover:text-fg" title="Paste many tasks at once">
+          ⇪ Import
+        </button>
+      )}
       <button type="button" onClick={load} className="text-muted hover:text-fg" aria-label="Refresh tasks">
         ↻
       </button>
@@ -352,6 +359,14 @@ export function Todos() {
               {error && <div className="px-4 pt-3">{errorLine}</div>}
               <div className="flex flex-1 items-start gap-4 overflow-x-auto p-4">{sections("board")}</div>
             </div>
+          )}
+
+          {importing && (
+            <ImportDialog
+              lists={state.lists.map((l) => l.name)}
+              onClose={() => setImporting(false)}
+              onDone={load}
+            />
           )}
 
           {detail && (
@@ -869,5 +884,102 @@ function ReminderSelect({ value, onChange, small }: { value: number | null; onCh
         </option>
       ))}
     </select>
+  );
+}
+
+/** Paste many tasks at once: "# List" lines name the list (made when missing), every other line is a task. */
+function ImportDialog({ lists, onClose, onDone }: { lists: string[]; onClose: () => void; onDone: () => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !pending && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, pending]);
+
+  const groups = parseTaskImport(text);
+  const count = importCount(groups);
+  const known = new Set(lists.map((l) => l.trim().toLowerCase()));
+  const newLists = groups.filter((g) => g.list && !known.has(g.list.trim().toLowerCase())).map((g) => g.list!);
+
+  function run() {
+    setError(null);
+    start(async () => {
+      const res = await importTodoTasks(text);
+      if (!res.ok) return setError(res.error);
+      const made = res.data?.createdLists ?? [];
+      setResult(`${res.data?.added ?? 0} tasks added${made.length ? ` · new lists: ${made.join(", ")}` : ""}.`);
+      setText("");
+      await onDone();
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && !pending && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label="Import tasks" className="w-full max-w-lg space-y-3 rounded-2xl border border-line bg-surface p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-semibold">⇪ Import tasks</h3>
+          <button type="button" onClick={onClose} disabled={pending} className="text-muted hover:text-fg" aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          One task per line. A line starting with <b>#</b> is a list name — made in Google Tasks if it isn’t there yet. Bullets and check
+          boxes are dropped.
+        </p>
+        <textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setResult(null);
+          }}
+          rows={12}
+          dir="auto"
+          autoFocus
+          placeholder={"# ERP\nSupplier payments check\nStock report bhejna\n# DUBAI\nRent voucher upload"}
+          aria-label="Tasks to import"
+          className="w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+        />
+        {count > 0 && (
+          <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs">
+            <p className="font-medium">
+              {count} task{count === 1 ? "" : "s"} →{" "}
+              {groups
+                .filter((g) => g.titles.length)
+                .map((g) => `${g.list ?? lists[0] ?? "default list"} (${g.titles.length})`)
+                .join(", ")}
+            </p>
+            {newLists.length > 0 && <p className="mt-0.5 text-muted">New lists to make: {newLists.join(", ")}</p>}
+            {count > IMPORT_MAX_TASKS && <p className="mt-0.5 text-danger">Up to {IMPORT_MAX_TASKS} at a time.</p>}
+          </div>
+        )}
+        {error && (
+          <p className="rounded-lg bg-danger-soft px-2 py-1 text-xs text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        {result && (
+          <p className="rounded-lg bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200" role="status">
+            ✓ {result}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={pending} className="rounded-xl px-3 py-2 text-sm text-muted hover:text-fg">
+            {result ? "Close" : "Cancel"}
+          </button>
+          <button
+            type="button"
+            onClick={run}
+            disabled={pending || count === 0 || count > IMPORT_MAX_TASKS}
+            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+          >
+            {pending ? `Adding ${count}…` : `Import ${count || ""}`.trim()}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

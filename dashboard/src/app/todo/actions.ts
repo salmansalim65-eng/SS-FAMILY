@@ -3,6 +3,8 @@
 import { GoogleNotConnected } from "@/lib/google";
 import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
+import { importGoogleTasks } from "@/lib/google-tasks";
+import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { forgetTask, REMIND_CHOICES, saveTaskSchedule, taskDoneChanged } from "@/lib/task-reminders";
 import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
 import type { ListColor, NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
@@ -130,5 +132,18 @@ export async function setTodoListColor(listId: string, color: ListColor | null):
       ? await supabase.from("dashboard_list_colors").upsert({ list_id: listId, color })
       : await supabase.from("dashboard_list_colors").delete().eq("list_id", listId);
     if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "List colours aren't set up yet." : error.message);
+  });
+}
+
+/** Pasted lists and tasks into Google Tasks; missing lists are made. */
+export async function importTodoTasks(text: string): Promise<TodoResult<{ added: number; createdLists: string[] }>> {
+  return attempt(async () => {
+    const groups = parseTaskImport(String(text ?? "").slice(0, 100_000));
+    const count = importCount(groups);
+    if (count === 0) throw new Error("Nothing to import — paste one task per line.");
+    if (count > IMPORT_MAX_TASKS) throw new Error(`That's ${count} tasks; import up to ${IMPORT_MAX_TASKS} at a time.`);
+    const { supabase, provider: p } = await provider();
+    if (p !== "google") throw new Error("Import works with Google Tasks — connect Google first.");
+    return importGoogleTasks(supabase, groups);
   });
 }
