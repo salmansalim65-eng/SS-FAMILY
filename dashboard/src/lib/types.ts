@@ -117,7 +117,12 @@ export type TodoTask = {
   color?: NoteColor | null; // kept by the dashboard, not the task service
   time?: string | null; // HH:MM on the due date, kept by the dashboard (Google Tasks keeps dates only)
   remind?: number | null; // minutes before the time to remind (null = no reminder)
+  subtasks?: TodoSubtask[]; // checklist (Google subtasks)
+  priority?: TaskPriority | null; // kept by the dashboard
 };
 
 /** What the task detail can change. */
+export type TodoSubtask = { id: string; title: string; done: boolean };
+export type TaskPriority = "urgent" | "important" | "medium" | "low";
+
 export type TodoTaskEdit = { title: string; notes: string; due: string | null; time?: string | null; remind?: number | null };

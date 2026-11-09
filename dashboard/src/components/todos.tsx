@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, moveTodoTask, setTodoListOrder, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoSubtask, addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, moveTodoTask, setTodoListOrder, setTodoTaskPriority, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { karachiToday, addDays } from "@/lib/time";
-import type { ListColor, NoteColor, TodoList, TodoTask } from "@/lib/types";
+import type { ListColor, NoteColor, TaskPriority, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 
@@ -51,6 +51,48 @@ const LIST_COLORS: { key: ListColor; band: string; dot: string }[] = [
 ];
 const listColor = (list: TodoList, i: number) => LIST_COLORS.find((c) => c.key === list.color) ?? LIST_COLORS[i % LIST_COLORS.length];
 
+
+// Planner-style priority, kept by the dashboard.
+const PRIORITIES: { key: TaskPriority; label: string; chip: string; dot: string }[] = [
+  { key: "urgent", label: "Urgent", chip: "bg-red-600 text-white", dot: "bg-red-600" },
+  { key: "important", label: "Important", chip: "bg-orange-500 text-white", dot: "bg-orange-500" },
+  { key: "medium", label: "Medium", chip: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200", dot: "bg-sky-400" },
+  { key: "low", label: "Low", chip: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300", dot: "bg-slate-400" },
+];
+const priorityOf = (p?: TaskPriority | null) => PRIORITIES.find((x) => x.key === p);
+
+type BoardGroup = "list" | "priority" | "due";
+const GROUP_KEY = "dashboard.boardGroup";
+
+// The task being dragged (HTML drag and drop carries only text, so the task itself is kept here).
+let dragged: TodoTask | null = null;
+
+/** Drop target props, and whether a task is hovering over it. */
+function useDrop(onDrop?: (t: TodoTask) => void) {
+  const [over, setOver] = useState(false);
+  if (!onDrop) return { over: false, props: {} };
+  return {
+    over,
+    props: {
+      onDragOver: (e: React.DragEvent) => {
+        if (!dragged) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        setOver(false);
+        const t = dragged;
+        dragged = null;
+        if (t) onDrop(t);
+      },
+    },
+  };
+}
 
 // Reminder choices: minutes before the due time (null = none).
 const REMINDERS: { value: number | null; label: string }[] = [
@@ -145,6 +187,19 @@ export function Todos() {
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [detail, setDetail] = useState<TodoTask | null>(null);
   const [board, setBoard] = useState(false);
+  const [group, setGroup] = useState<BoardGroup>("list");
+  useEffect(() => {
+    try {
+      const g = localStorage.getItem(GROUP_KEY);
+      if (g === "list" || g === "priority" || g === "due") setGroup(g);
+    } catch {}
+  }, []);
+  function chooseGroup(g: BoardGroup) {
+    setGroup(g);
+    try {
+      localStorage.setItem(GROUP_KEY, g);
+    } catch {}
+  }
   // Lists folded in the panel, remembered in this browser.
   const [folded, setFolded] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -238,6 +293,46 @@ export function Todos() {
   useEffect(() => setCanNotify(typeof Notification === "undefined" ? "unsupported" : Notification.permission), []);
   const hasReminders = state.status === "ready" && state.tasks.some((t) => t.remind !== null && t.remind !== undefined);
 
+  // An open task detail follows reloads (checklist, priority) of the same task.
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    setDetail((d) => {
+      if (!d) return d;
+      const fresh = state.tasks.find((t) => t.id === d.id);
+      return fresh && JSON.stringify(fresh) !== JSON.stringify(d) ? fresh : d;
+    });
+  }, [state]);
+
+  // Dropping a task on another list moves it there.
+  function dropToList(task: TodoTask, listId: string) {
+    if (task.listId === listId || state.status !== "ready" || state.provider !== "google") return;
+    const name = state.lists.find((l) => l.id === listId)?.name ?? "";
+    setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.map((x) => (x.id === task.id ? { ...x, listId, listName: name } : x)) } : s));
+    setError(null);
+    start(async () => {
+      const res = await moveTodoTask(task.listId, task.id, listId);
+      if (!res.ok) setError(res.error);
+      await load();
+    });
+  }
+
+  // Priority, shown at once and saved; put back if saving fails.
+  function setPriority(task: TodoTask, priority: TaskPriority | null) {
+    const before = task.priority ?? null;
+    const paint = (p: TaskPriority | null) => {
+      setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.map((x) => (x.id === task.id ? { ...x, priority: p } : x)) } : s));
+      setDetail((d) => (d && d.id === task.id ? { ...d, priority: p } : d));
+    };
+    paint(priority);
+    start(async () => {
+      const res = await setTodoTaskPriority(task.id, priority);
+      if (!res.ok) {
+        setError(res.error);
+        paint(before);
+      }
+    });
+  }
+
   // ▲ ▼ on a list: swaps it with its neighbour and saves the order.
   function moveList(i: number, dir: -1 | 1) {
     if (state.status !== "ready") return;
@@ -292,6 +387,7 @@ export function Todos() {
         onColor={(c) => paintList(list.id, c)}
         onDelete={ready!.provider === "google" && !list.isDefault ? () => removeList(list) : undefined}
         onMove={(dir) => moveList(i, dir)}
+        onDropTask={ready!.provider === "google" ? (t) => dropToList(t, list.id) : undefined}
         folded={layout === "stack" && folded.has(list.id)}
         onFold={() => {
           const next = new Set(folded);
@@ -413,14 +509,39 @@ export function Todos() {
                 {title}
                 {headerButtons(true)}
               </div>
+              <BoardBar
+                tasks={state.tasks}
+                isDone={isDone}
+                dates={dates}
+                group={group}
+                onGroup={chooseGroup}
+              />
               {error && <div className="px-4 pt-3">{errorLine}</div>}
-              <div className="flex flex-1 items-start gap-4 overflow-x-auto p-4">{sections("board")}</div>
+              <div className="flex flex-1 items-start gap-4 overflow-x-auto p-4">
+                {group === "list" ? (
+                  sections("board")
+                ) : (
+                  <GroupColumns
+                    group={group}
+                    tasks={state.tasks}
+                    isDone={isDone}
+                    dates={dates}
+                    onToggle={toggle}
+                    onOpen={setDetail}
+                    onPriority={setPriority}
+                  />
+                )}
+              </div>
             </div>
           )}
 
           {detail && (
             <TaskDetail
               task={detail}
+              onPriority={(p) => setPriority(detail, p)}
+              onChecklist={async () => {
+                await load();
+              }}
               lists={state.provider === "google" ? state.lists : []}
               onMove={async (toListId) => {
                 const res = await moveTodoTask(detail.listId, detail.id, toListId);
@@ -482,7 +603,9 @@ function ListSection({
   canDown,
   folded,
   onFold,
+  onDropTask,
 }: {
+  onDropTask?: (t: TodoTask) => void;
   folded: boolean;
   onFold: () => void;
   color: (typeof LIST_COLORS)[number];
@@ -505,14 +628,16 @@ function ListSection({
   const open = tasks.filter((t) => !isDone(t));
   const finished = tasks.filter((t) => isDone(t));
   const board = layout === "board";
+  const drop = useDrop(onDropTask);
 
   return (
     <div
-      className={
+      {...drop.props}
+      className={`${
         board
           ? "flex max-h-full w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm"
           : "overflow-hidden rounded-xl border border-line/70"
-      }
+      } ${drop.over ? "ring-2 ring-accent ring-offset-1" : ""}`}
     >
       <div className={`flex items-center gap-1 ${color.band} ${board ? "px-4 py-2" : "px-2.5 py-1"}`}>
         <button
@@ -599,7 +724,7 @@ function ListSection({
           ) : (
             <ul className="space-y-0.5">
               {open.map((t) => (
-                <TaskRow key={t.id} task={t} done={false} dates={dates} onToggle={onToggle} onOpen={onOpen} />
+                <TaskRow key={t.id} task={t} done={false} dates={dates} onToggle={onToggle} onOpen={onOpen} draggable={!!onDropTask} />
               ))}
             </ul>
           )}
@@ -634,17 +759,33 @@ function TaskRow({
   dates,
   onToggle,
   onOpen,
+  draggable,
+  showList,
 }: {
   task: TodoTask;
   done: boolean;
   dates: Dates;
   onToggle: (t: TodoTask) => void;
   onOpen: (t: TodoTask) => void;
+  draggable?: boolean;
+  showList?: boolean;
 }) {
   const label = t.due && !done ? dueLabel(t.due, t.time, dates, dates.now) : null;
+  const pri = priorityOf(t.priority);
+  const checks = t.subtasks ?? [];
+  const checked = checks.filter((c) => c.done).length;
   return (
     <li
-      className={`flex items-start gap-2.5 rounded-lg px-1.5 py-1.5 ${rowColor(t.color) ?? "hover:bg-surface-2"} ${t.color ? "mb-0.5 hover:brightness-95" : ""}`}
+      draggable={draggable}
+      onDragStart={(e) => {
+        dragged = t;
+        e.dataTransfer.setData("text/plain", t.title);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={() => (dragged = null)}
+      className={`flex items-start gap-2.5 rounded-lg px-1.5 py-1.5 ${rowColor(t.color) ?? "hover:bg-surface-2"} ${t.color ? "mb-0.5 hover:brightness-95" : ""} ${
+        draggable ? "cursor-grab active:cursor-grabbing" : ""
+      }`}
     >
       <input
         type="checkbox"
@@ -658,7 +799,18 @@ function TaskRow({
           {t.important && <span className="mr-1 text-amber-500" aria-label="Important">★</span>}
           {t.title}
         </span>
-        {t.notes && <span className="block truncate text-[11px] text-muted">📝 {t.notes}</span>}
+        {(pri || checks.length > 0 || showList || t.notes) && (
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+            {pri && !done && <span className={`rounded px-1.5 py-px text-[10px] font-semibold ${pri.chip}`}>{pri.label}</span>}
+            {checks.length > 0 && (
+              <span className={checked === checks.length ? "text-emerald-600 dark:text-emerald-400" : ""} title="Checklist">
+                ☑ {checked}/{checks.length}
+              </span>
+            )}
+            {showList && <span>{t.listName}</span>}
+            {t.notes && <span className="min-w-0 truncate">📝 {t.notes}</span>}
+          </span>
+        )}
       </button>
       {label && (
         <button
@@ -672,6 +824,179 @@ function TaskRow({
         </button>
       )}
     </li>
+  );
+}
+
+/** Above the board: a small summary and how to group the columns. */
+function BoardBar({
+  tasks,
+  isDone,
+  dates,
+  group,
+  onGroup,
+}: {
+  tasks: TodoTask[];
+  isDone: (t: TodoTask) => boolean;
+  dates: Dates;
+  group: BoardGroup;
+  onGroup: (g: BoardGroup) => void;
+}) {
+  const open = tasks.filter((t) => !isDone(t));
+  const late = open.filter((t) => t.due && (t.due < dates.today || (t.due === dates.today && !!t.time && t.time < dates.now))).length;
+  const today = open.filter((t) => t.due === dates.today).length;
+  const urgent = open.filter((t) => t.priority === "urgent").length;
+  const done = tasks.length - open.length;
+  const stat = (label: string, n: number, tone: string) => (
+    <div className="rounded-xl border border-line bg-surface px-3 py-1.5 text-center shadow-sm">
+      <p className={`text-lg font-semibold leading-tight tabular-nums ${tone}`}>{n}</p>
+      <p className="text-[11px] text-muted">{label}</p>
+    </div>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+      {stat("Open", open.length, "")}
+      {stat("Late", late, late ? "text-danger" : "")}
+      {stat("Today", today, today ? "text-accent" : "")}
+      {stat("Urgent", urgent, urgent ? "text-red-600" : "")}
+      {stat("Done this week", done, "text-emerald-600 dark:text-emerald-400")}
+      <div className="ml-auto flex items-center gap-1 rounded-full border border-line bg-surface p-0.5 text-xs" role="tablist" aria-label="Group by">
+        <span className="px-2 text-muted">Group by</span>
+        {(
+          [
+            ["list", "List"],
+            ["priority", "Priority"],
+            ["due", "Due date"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={group === key}
+            onClick={() => onGroup(key)}
+            className={`rounded-full px-3 py-1 ${group === key ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Board columns by priority or due date; dropping a task on a priority column sets it. */
+function GroupColumns({
+  group,
+  tasks,
+  isDone,
+  dates,
+  onToggle,
+  onOpen,
+  onPriority,
+}: {
+  group: "priority" | "due";
+  tasks: TodoTask[];
+  isDone: (t: TodoTask) => boolean;
+  dates: Dates;
+  onToggle: (t: TodoTask) => void;
+  onOpen: (t: TodoTask) => void;
+  onPriority: (t: TodoTask, p: TaskPriority | null) => void;
+}) {
+  const open = tasks.filter((t) => !isDone(t));
+  const weekEnd = ymd(addDays(karachiToday(), 7));
+  const columns: { key: string; title: string; band: string; tasks: TodoTask[]; onDrop?: (t: TodoTask) => void }[] =
+    group === "priority"
+      ? [
+          ...PRIORITIES.map((p) => ({
+            key: p.key,
+            title: p.label,
+            band: p.chip,
+            tasks: open.filter((t) => t.priority === p.key),
+            onDrop: (t: TodoTask) => t.priority !== p.key && onPriority(t, p.key),
+          })),
+          {
+            key: "none",
+            title: "No priority",
+            band: "bg-surface-2 text-fg",
+            tasks: open.filter((t) => !t.priority),
+            onDrop: (t: TodoTask) => t.priority && onPriority(t, null),
+          },
+        ]
+      : [
+          { key: "late", title: "Late", band: "bg-red-100 text-red-900 dark:bg-red-950/70 dark:text-red-100", tasks: open.filter((t) => t.due && t.due < dates.today) },
+          { key: "today", title: "Today", band: "bg-indigo-100 text-indigo-900 dark:bg-indigo-950/70 dark:text-indigo-100", tasks: open.filter((t) => t.due === dates.today) },
+          { key: "tomorrow", title: "Tomorrow", band: "bg-sky-100 text-sky-900 dark:bg-sky-950/70 dark:text-sky-100", tasks: open.filter((t) => t.due === dates.tomorrow) },
+          {
+            key: "week",
+            title: "This week",
+            band: "bg-teal-100 text-teal-900 dark:bg-teal-950/70 dark:text-teal-100",
+            tasks: open.filter((t) => t.due && t.due > dates.tomorrow && t.due <= weekEnd),
+          },
+          { key: "later", title: "Later", band: "bg-violet-100 text-violet-900 dark:bg-violet-950/70 dark:text-violet-100", tasks: open.filter((t) => t.due && t.due > weekEnd) },
+          { key: "none", title: "No date", band: "bg-surface-2 text-fg", tasks: open.filter((t) => !t.due) },
+        ];
+  return (
+    <>
+      {columns.map((c) => (
+        <GroupColumn
+          key={c.key}
+          title={c.title}
+          band={c.band}
+          tasks={c.tasks}
+          onDrop={c.onDrop}
+          dates={dates}
+          onToggle={onToggle}
+          onOpen={onOpen}
+          draggable={group === "priority"}
+        />
+      ))}
+    </>
+  );
+}
+
+function GroupColumn({
+  title,
+  band,
+  tasks,
+  onDrop,
+  dates,
+  onToggle,
+  onOpen,
+  draggable,
+}: {
+  title: string;
+  band: string;
+  tasks: TodoTask[];
+  onDrop?: (t: TodoTask) => void;
+  dates: Dates;
+  onToggle: (t: TodoTask) => void;
+  onOpen: (t: TodoTask) => void;
+  draggable: boolean;
+}) {
+  const drop = useDrop(onDrop);
+  return (
+    <div
+      {...drop.props}
+      className={`flex max-h-full w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${
+        drop.over ? "ring-2 ring-accent ring-offset-1" : ""
+      }`}
+    >
+      <div className={`flex items-center gap-2 px-4 py-2 text-lg font-semibold ${band}`}>
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {tasks.length > 0 && <span className="rounded-full bg-white/60 px-1.5 text-xs font-medium text-fg dark:bg-black/20">{tasks.length}</span>}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 pr-2">
+        {tasks.length === 0 ? (
+          <p className="px-1.5 py-1.5 text-xs text-muted">{onDrop ? "Drop a task here" : "Nothing here"}</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {tasks.map((t) => (
+              <TaskRow key={t.id} task={t} done={false} dates={dates} onToggle={onToggle} onOpen={onOpen} draggable={draggable} showList />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -807,6 +1132,8 @@ function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: s
 /** A task opened from the list: edit its title, notes and due date, tick it, or delete it. */
 function TaskDetail({
   task,
+  onPriority,
+  onChecklist,
   lists,
   onMove,
   done,
@@ -817,6 +1144,8 @@ function TaskDetail({
   onColor,
 }: {
   task: TodoTask;
+  onPriority: (p: TaskPriority | null) => void;
+  onChecklist: () => Promise<void>;
   lists: TodoList[];
   onMove: (toListId: string) => Promise<string | null>;
   done: boolean;
@@ -957,6 +1286,24 @@ function TaskDetail({
             <ReminderSelect value={remind} onChange={setRemind} />
           </label>
         )}
+        <label className="flex items-center gap-2 text-sm text-muted">
+          Priority
+          <select
+            value={task.priority ?? ""}
+            onChange={(e) => onPriority((e.target.value || null) as TaskPriority | null)}
+            aria-label="Priority"
+            className="rounded-lg border border-line bg-surface px-2 py-1 text-sm text-fg"
+          >
+            <option value="">None</option>
+            {PRIORITIES.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          {priorityOf(task.priority) && <span className={`size-2.5 rounded-full ${priorityOf(task.priority)!.dot}`} aria-hidden />}
+        </label>
+        {lists.length > 0 && <Checklist task={task} onChanged={onChecklist} />}
         <div className="flex items-center gap-1.5" role="group" aria-label="Colour">
           <span className="mr-1 text-sm text-muted">Colour</span>
           <button
@@ -1017,5 +1364,112 @@ function ReminderSelect({ value, onChange, small }: { value: number | null; onCh
         </option>
       ))}
     </select>
+  );
+}
+
+/** A task's checklist (Google subtasks): tick, remove or add items. */
+function Checklist({ task, onChanged }: { task: TodoTask; onChanged: () => Promise<void> }) {
+  const [items, setItems] = useState(task.subtasks ?? []);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  useEffect(() => setItems(task.subtasks ?? []), [task.subtasks]);
+
+  function tick(id: string, done: boolean) {
+    setItems((xs) => xs.map((x) => (x.id === id ? { ...x, done } : x)));
+    start(async () => {
+      const res = await setTodoTaskDone(task.listId, id, done);
+      if (!res.ok) setError(res.error);
+      await onChanged();
+    });
+  }
+  function remove(id: string) {
+    setItems((xs) => xs.filter((x) => x.id !== id));
+    start(async () => {
+      const res = await deleteTodoTask(task.listId, id);
+      if (!res.ok) setError(res.error);
+      await onChanged();
+    });
+  }
+  // Not a <form>: the checklist sits inside the task's own form.
+  function add() {
+    const title = text.trim();
+    if (!title) return;
+    setError(null);
+    start(async () => {
+      const res = await addTodoSubtask(task.listId, task.id, title, items.at(-1)?.id ?? null);
+      if (!res.ok) return setError(res.error);
+      setText("");
+      await onChanged();
+    });
+  }
+
+  const done = items.filter((x) => x.done).length;
+  return (
+    <div className="space-y-1.5 rounded-xl border border-line p-2.5">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">☑ Checklist</span>
+        {items.length > 0 && (
+          <span className="text-xs text-muted">
+            {done}/{items.length}
+          </span>
+        )}
+      </div>
+      {items.length > 0 && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${(done / items.length) * 100}%` }} />
+        </div>
+      )}
+      <ul className="space-y-0.5">
+        {items.map((x) => (
+          <li key={x.id} className="group flex items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-surface-2">
+            <input
+              type="checkbox"
+              checked={x.done}
+              onChange={() => tick(x.id, !x.done)}
+              aria-label={x.done ? `Untick "${x.title}"` : `Tick "${x.title}"`}
+              className="size-4 shrink-0 cursor-pointer accent-emerald-600"
+            />
+            <span className={`min-w-0 flex-1 text-sm ${x.done ? "text-muted line-through" : ""}`} dir="auto">
+              {x.title}
+            </span>
+            <button
+              type="button"
+              onClick={() => remove(x.id)}
+              aria-label={`Remove "${x.title}"`}
+              className="text-xs text-muted opacity-0 hover:text-danger group-hover:opacity-100"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-1.5">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          maxLength={255}
+          placeholder="+ Add an item"
+          aria-label="New checklist item"
+          dir="auto"
+          className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-sm outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={pending || !text.trim()}
+          className="rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-60"
+        >
+          Add
+        </button>
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

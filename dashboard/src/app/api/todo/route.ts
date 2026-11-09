@@ -14,14 +14,16 @@ export async function GET() {
   try {
     const { provider, googleNeedsReconnect } = await todoProvider(owner.supabase);
     if (!provider) return NextResponse.json({ connected: false, googleNeedsReconnect, lists: [], tasks: [] });
-    const [{ lists, tasks }, colors, times, listColors, order] = await Promise.all([
+    const [{ lists, tasks }, colors, times, listColors, order, meta] = await Promise.all([
       listTasks(owner.supabase, provider),
       // Missing tables (migration not run yet) just mean no colours / times.
       owner.supabase.from("dashboard_task_colors").select("task_id, color"),
       owner.supabase.from("dashboard_task_times").select("task_id, due_time, remind_minutes"),
       owner.supabase.from("dashboard_list_colors").select("list_id, color"),
       owner.supabase.from("dashboard_settings").select("value").eq("key", "task_list_order").maybeSingle(),
+      owner.supabase.from("dashboard_task_meta").select("task_id, priority"),
     ]);
+    const priorityOf = new Map((meta.data ?? []).map((m) => [m.task_id as string, m.priority]));
     // The owner's own list order (▲ ▼ in the panel); lists not in it keep Google's order, after.
     const ids: string[] = Array.isArray(order.data?.value) ? (order.data!.value as string[]) : [];
     const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length);
@@ -35,6 +37,7 @@ export async function GET() {
       t.color = colorOf.get(t.id) ?? null;
       t.time = t.due ? (timeOf.get(t.id) ?? null) : null;
       t.remind = t.time ? (remindOf.get(t.id) ?? null) : null;
+      t.priority = priorityOf.get(t.id) ?? null;
     }
     return NextResponse.json({ connected: true, provider, lists, tasks }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
