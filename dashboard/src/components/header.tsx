@@ -6,18 +6,10 @@ import { signOut } from "@/app/login/actions";
 import { TIME_ZONE } from "@/lib/time";
 import { ThemeToggle } from "./theme-toggle";
 
-function greeting(now: Date) {
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(now));
-  if (hour < 5) return "Good night";
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
 const dateFmt = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", minute: "2-digit", second: "2-digit" });
 
-export function Header({ name, showSettings = true }: { name: string; showSettings?: boolean }) {
+export function Header({ showSettings = true }: { showSettings?: boolean }) {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
@@ -26,12 +18,9 @@ export function Header({ name, showSettings = true }: { name: string; showSettin
   }, []);
 
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {now ? greeting(now) : "Hello"}, {name}
-        </h1>
-        <p className="mt-1 text-sm text-muted sm:text-base">
+        <p className="text-sm text-muted sm:text-base">
           {now ? (
             <>
               {dateFmt.format(now)} · <span className="tabular-nums">{timeFmt.format(now)}</span>

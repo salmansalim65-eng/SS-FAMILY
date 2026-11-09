@@ -15,11 +15,12 @@ as its own Vercel project. It does not touch the SS Family app.
 
 | Section | What it does |
 | --- | --- |
-| Header | Greeting with your name, live date and time in Asia/Karachi, theme toggle, settings, sign out |
+| Header | Live date and time in Asia/Karachi, theme toggle, settings, sign out |
 | My Projects | App-style icons (MBL, RMI, SSA, VISTA …). Tap → opens the project in a new tab |
 | Reports | 3–5 KPI cards per project: big number, trend vs last month, last-updated time. Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
-| Personal | Mera, SS Family, Google Calendar, Microsoft To Do tiles, plus your Google Calendar embedded (agenda / week / month) |
-| Settings | Name, currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
+| Personal | Mera, SS Family, Google Calendar, Microsoft To Do tiles, right under My Projects |
+| Calendar | Your Google Calendar: week and schedule views, + Event |
+| Settings | Currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
 
 ## How it's put together
 

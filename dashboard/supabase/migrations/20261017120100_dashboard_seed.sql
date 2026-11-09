@@ -4,10 +4,10 @@
 
 insert into public.dashboard_apps (name, url, icon, color, category, sort_order)
 select * from (values
-  ('MBL',              'https://example.com/mbl',            '/logos/mbl.png', '#2563eb', 'project', 10),
-  ('RMI',              'https://example.com/rmi',            '/logos/rmi.png', '#16a34a', 'project', 20),
-  ('SSA',              'https://example.com/ssa',            '/logos/ssa.svg', '#ea580c', 'project', 30),
-  ('VISTA',            'https://example.com/vista',          '/logos/vista.svg', '#9333ea', 'project', 40),
+  ('MBL',              'https://example.com/mbl',            '/logos/mbl.png', '#2563eb', 'project', 40),
+  ('RMI',              'https://example.com/rmi',            '/logos/rmi.png', '#16a34a', 'project', 30),
+  ('SSA',              'https://example.com/ssa',            '/logos/ssa.svg', '#ea580c', 'project', 10),
+  ('VISTA',            'https://example.com/vista',          '/logos/vista.svg', '#9333ea', 'project', 20),
   ('Mera',             'https://example.com/mera',           'M',   '#0891b2', 'personal', 10),
   ('SS Family',        'https://example.com/ss-family',      '/logos/ss-family.png', '#db2777', 'personal', 20),
   ('Google Calendar',  'https://calendar.google.com',        '📅',  '#1a73e8', 'personal', 30),
