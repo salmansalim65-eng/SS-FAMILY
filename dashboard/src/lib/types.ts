@@ -114,7 +114,8 @@ export type TodoTask = {
   notes: string | null;
   done: boolean; // completed in the last week (shown under "Completed")
   color?: NoteColor | null; // kept by the dashboard, not the task service
+  time?: string | null; // HH:MM on the due date, kept by the dashboard (Google Tasks keeps dates only)
 };
 
 /** What the task detail can change. */
-export type TodoTaskEdit = { title: string; notes: string; due: string | null };
+export type TodoTaskEdit = { title: string; notes: string; due: string | null; time?: string | null };

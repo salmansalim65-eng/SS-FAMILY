@@ -68,12 +68,14 @@ export async function listGoogleTasks(db: SupabaseClient): Promise<{ lists: Todo
   return { lists, tasks };
 }
 
-export async function addGoogleTask(db: SupabaseClient, listId: string, title: string, due: string | null) {
+/** Adds a task and returns its id. */
+export async function addGoogleTask(db: SupabaseClient, listId: string, title: string, due: string | null): Promise<string | null> {
   const token = await accessToken(db);
-  await call(token, `/lists/${encodeURIComponent(listId)}/tasks`, {
+  const created = await call<{ id?: string } | undefined>(token, `/lists/${encodeURIComponent(listId)}/tasks`, {
     method: "POST",
     body: { title, ...(due ? { due: `${due}T00:00:00.000Z` } : {}) },
   });
+  return created?.id ?? null;
 }
 
 export async function setGoogleTaskDone(db: SupabaseClient, listId: string, taskId: string, done: boolean) {
