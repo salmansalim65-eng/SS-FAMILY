@@ -1,4 +1,4 @@
-import { AppGrid } from "@/components/app-icon";
+import { AppDock } from "@/components/app-icon";
 import { CalendarEmbed } from "@/components/calendar-embed";
 import { CalendarEvents } from "@/components/calendar-events";
 import { Header } from "@/components/header";
@@ -33,19 +33,10 @@ export default async function Home() {
   }));
 
   return (
-    <main className="mx-auto max-w-6xl space-y-10 px-4 py-6 sm:px-6 sm:py-10">
-      <Header />
-
-      <div className="space-y-6">
-        <Section title="My Projects">
-          <AppGrid apps={projects} />
-        </Section>
-        {personal.length > 0 && (
-          <Section title="Personal">
-            <AppGrid apps={personal} />
-          </Section>
-        )}
-      </div>
+    <main className="mx-auto max-w-6xl space-y-10 px-4 pb-10 sm:px-6">
+      <Header>
+        <AppDock groups={[projects, personal]} />
+      </Header>
 
       <Notes initial={notes} />
 
