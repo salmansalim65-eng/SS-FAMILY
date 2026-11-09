@@ -17,13 +17,14 @@ export default function PrivacyPage() {
         other users.
       </p>
 
-      <h2 className="pt-2 text-base font-semibold">Google Calendar</h2>
+      <h2 className="pt-2 text-base font-semibold">Google Calendar and Tasks</h2>
       <p>
         When the owner connects Google Calendar, the dashboard asks for access to read calendars
-        (<code>calendar.readonly</code>), to add events (<code>calendar.events</code>) and for the account’s email
-        address. It uses these only to show the owner’s own events in a week and schedule view, and to add an event when
-        the owner fills in the “New event” form. It never changes or deletes existing events on its own, and it does not
-        share, sell or send calendar data to anyone.
+        (<code>calendar.readonly</code>), to add events (<code>calendar.events</code>), to read and update Google
+        Tasks (<code>tasks</code>) and for the account’s email address. It uses these only to show the owner’s own
+        events in a week and schedule view and their open tasks, to add an event or a task or a task list when the owner
+        asks, and to mark a task done when the owner ticks it. It never changes or deletes anything on its own, and it
+        does not share, sell or send calendar or task data to anyone.
       </p>
       <p>
         The Google refresh token is stored encrypted in the dashboard’s database. Event details are fetched on demand and

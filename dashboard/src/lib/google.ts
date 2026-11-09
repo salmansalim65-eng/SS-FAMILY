@@ -16,7 +16,8 @@ export const GOOGLE_STATE_COOKIE = "google_oauth_state";
 
 const READ_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-export const GOOGLE_SCOPES = ["openid", "email", READ_SCOPE, WRITE_SCOPE];
+export const TASKS_SCOPE = "https://www.googleapis.com/auth/tasks";
+export const GOOGLE_SCOPES = ["openid", "email", READ_SCOPE, WRITE_SCOPE, TASKS_SCOPE];
 const MAX_CALENDARS = 10;
 
 /** Thrown when Google no longer accepts the stored grant; the user must reconnect. */
@@ -101,7 +102,16 @@ export async function googleConnection(db: SupabaseClient) {
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return { account_email: data.account_email as string | null, connected_at: data.connected_at as string, canWrite: canWrite(data.scope) };
+  return {
+    account_email: data.account_email as string | null,
+    connected_at: data.connected_at as string,
+    canWrite: canWrite(data.scope),
+    canTasks: hasScope(data.scope, TASKS_SCOPE),
+  };
+}
+
+export function hasScope(scope: string | null, wanted: string) {
+  return (scope ?? "").split(" ").includes(wanted);
 }
 
 function canWrite(scope: string | null) {
@@ -124,7 +134,7 @@ export async function disconnectGoogle(db: SupabaseClient) {
 }
 
 /** A valid access token, refreshed (and re-stored) when the cached one is about to expire. */
-async function accessToken(db: SupabaseClient): Promise<string> {
+export async function accessToken(db: SupabaseClient): Promise<string> {
   const { data, error } = await db
     .from("dashboard_oauth_tokens")
     .select("refresh_token_enc, access_token_enc, access_expires_at")

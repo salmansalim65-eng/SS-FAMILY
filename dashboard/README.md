@@ -16,7 +16,7 @@ as its own Vercel project. It does not touch the SS Family app.
 | Section | What it does |
 | --- | --- |
 | Top bar | Every icon in one sticky bar — projects (SSA, VISTA, RMI, MBL, SS Family) then personal (Mera, Google Calendar, Microsoft To Do); tap → opens in a new tab. Live Asia/Karachi date and time, theme toggle, settings, sign out |
-| Schedule · To Do · Notes | One row of three panels: this week's Google Calendar (+ to add an event, **Week** opens the full week grid), open Microsoft To Do tasks (add, tick off, due dates) and your sticky notes |
+| Schedule · To Do · Notes | One row of three panels: this week's Google Calendar (+ to add an event, **Week** opens the full week grid), open Google Tasks from every list (add with a due date, tick off, make a new list; Microsoft To Do is used instead when only that is connected) and your sticky notes |
 | Two screens | **⧉ Two screens** (wide screens) opens the project cards in a second window, on the other monitor where the browser allows it, and keeps schedule, to-do and notes here; **▣ One screen** joins them again. `/?screen=day` and `/?screen=projects` can be bookmarked |
 | Projects | Compact KPI cards grouped per project under its logo, up to six to a row: the main figure with sub-rows (Dr/Cr, overdue, budget…). Refresh button + auto-refresh every 5 minutes. A failing card shows its own error; the rest keep working |
 | Settings | Currency, calendar URL · add / edit / delete / drag-to-reorder icons · add / edit / delete report cards |
@@ -203,14 +203,15 @@ event to any calendar you can edit.
 One-time setup in [Google Cloud Console](https://console.cloud.google.com/):
 
 1. Create (or pick) a project → **APIs & Services → Library** → enable
-   **Google Calendar API**.
+   **Google Calendar API** and **Google Tasks API**.
 2. **OAuth consent screen** (Google Auth Platform → Branding / Audience):
    app name "My Dashboard", user type **External**, your email as support and
    developer contact. Under **Audience → Test users** add your Google email.
    Under **Data access** add the scopes `openid`, `email` and
    `https://www.googleapis.com/auth/calendar.readonly` and
-   `https://www.googleapis.com/auth/calendar.events`. (Connected before adding
-   events existed? Settings shows "View only" — click **Reconnect** once.)
+   `https://www.googleapis.com/auth/calendar.events` and
+   `https://www.googleapis.com/auth/tasks`. (Connected before these existed?
+   Settings asks you to **Reconnect** once.)
 3. **Clients → Create client** → type **Web application** → Authorized
    redirect URIs: `https://<your-dashboard>/api/google/callback` (one per
    domain you use, e.g. both the `*.vercel.app` name and a custom one).
@@ -245,7 +246,16 @@ dragged into order, and switched between text and checklist. In a checklist,
 Enter adds the next item and Backspace on an empty item removes it; ticked
 items move below the open ones.
 
-### 7. Microsoft To Do
+### 7. Tasks
+
+The Tasks panel uses **Google Tasks** through the Google connection above
+(enable the Google Tasks API and add the `tasks` scope, then Reconnect).
+Google Tasks lists can't be shared and tasks can't be assigned on personal
+Gmail accounts, and the API offers neither.
+
+#### Microsoft To Do (optional)
+
+Used only when Google Tasks isn't connected.
 
 The To Do panel shows every open task from your Microsoft To Do lists
 (flagged emails left out), soonest due first; you can add a task (with a

@@ -1,18 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, setTodoTaskDone } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, setTodoTaskDone } from "@/app/todo/actions";
 import { karachiToday, addDays } from "@/lib/time";
 import type { TodoList, TodoTask } from "@/lib/types";
 
 const REFRESH_MS = 5 * 60 * 1000;
-const TODO_URL = "https://to-do.live.com/tasks/";
+const OPEN_URL = { google: "https://tasks.google.com/", microsoft: "https://to-do.live.com/tasks/" } as const;
+const NEW_LIST = "__new__";
 
+type Provider = keyof typeof OPEN_URL;
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "disconnected" }
-  | { status: "ready"; lists: TodoList[]; tasks: TodoTask[] };
+  | { status: "disconnected"; reconnect: boolean }
+  | { status: "ready"; provider: Provider; lists: TodoList[]; tasks: TodoTask[] };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = ({ y, m, d }: { y: number; m: number; d: number }) => `${y}-${pad(m)}-${pad(d)}`;
@@ -25,7 +27,7 @@ function dueLabel(due: string, today: string, tomorrow: string) {
   return { text: dueFmt.format(new Date(`${due}T00:00:00Z`)), tone: "text-muted" };
 }
 
-/** Open tasks from Microsoft To Do: add one, tick one off. */
+/** Open tasks from Google Tasks (or Microsoft To Do): add one, tick one off, make a list. */
 export function Todos() {
   const [state, setState] = useState<State>({ status: "loading" });
   const [listId, setListId] = useState("");
@@ -41,8 +43,8 @@ export function Todos() {
       const res = await fetch("/api/todo", { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      if (!body.connected) return setState({ status: "disconnected" });
-      setState({ status: "ready", lists: body.lists, tasks: body.tasks });
+      if (!body.connected) return setState({ status: "disconnected", reconnect: Boolean(body.googleNeedsReconnect) });
+      setState({ status: "ready", provider: body.provider, lists: body.lists, tasks: body.tasks });
       setDone(new Set());
       setListId((current) => current || body.lists.find((l: TodoList) => l.isDefault)?.id || body.lists[0]?.id || "");
     } catch (e) {
@@ -55,6 +57,20 @@ export function Todos() {
     const t = setInterval(load, REFRESH_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  // Picking "+ New list…" asks for a name and makes the list in Google Tasks.
+  function chooseList(value: string) {
+    if (value !== NEW_LIST) return setListId(value);
+    const name = window.prompt("New list name");
+    if (!name?.trim()) return;
+    setError(null);
+    start(async () => {
+      const res = await createTodoList(name);
+      if (!res.ok) return setError(res.error);
+      await load();
+      if (res.data) setListId(res.data.id);
+    });
+  }
 
   function add(e: React.FormEvent) {
     e.preventDefault();
@@ -99,14 +115,24 @@ export function Todos() {
     <section className="h-full rounded-2xl border border-line bg-surface p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-semibold">
-          <span className="grid size-6 place-items-center rounded-md bg-[#2564cf] text-xs text-white">✓</span>
-          To Do
+          <span className="grid size-6 place-items-center rounded-md bg-[#1a73e8] text-xs text-white">✓</span>
+          Tasks
         </h2>
         <div className="flex items-center gap-2 text-xs">
+          {state.status === "ready" && state.provider === "google" && (
+            <button type="button" onClick={() => chooseList(NEW_LIST)} disabled={pending} className="text-muted hover:text-fg">
+              + List
+            </button>
+          )}
           <button type="button" onClick={load} className="text-muted hover:text-fg" aria-label="Refresh tasks">
             ↻
           </button>
-          <a href={TODO_URL} target="_blank" rel="noopener noreferrer" className="text-muted hover:text-fg">
+          <a
+            href={OPEN_URL[state.status === "ready" ? state.provider : "google"]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted hover:text-fg"
+          >
             Open ↗
           </a>
         </div>
@@ -114,9 +140,13 @@ export function Todos() {
 
       {state.status === "disconnected" ? (
         <div className="space-y-2">
-          <p className="text-sm text-muted">Connect Microsoft To Do once to see and add your tasks here.</p>
-          <a href="/api/microsoft/connect" className="inline-block rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">
-            Connect Microsoft To Do
+          <p className="text-sm text-muted">
+            {state.reconnect
+              ? "Reconnect Google once to allow Google Tasks, then your lists show here."
+              : "Connect Google to see and add your Google Tasks here."}
+          </p>
+          <a href="/api/google/connect" className="inline-block rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">
+            {state.reconnect ? "Reconnect Google" : "Connect Google"}
           </a>
         </div>
       ) : state.status === "loading" ? (
@@ -150,10 +180,10 @@ export function Todos() {
                   aria-label="Due date"
                   className="rounded-lg border border-line bg-surface px-2 py-1 text-xs"
                 />
-                {state.lists.length > 1 && (
+                {(state.lists.length > 1 || state.provider === "google") && (
                   <select
                     value={listId}
-                    onChange={(e) => setListId(e.target.value)}
+                    onChange={(e) => chooseList(e.target.value)}
                     aria-label="List"
                     className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-xs"
                   >
@@ -162,6 +192,7 @@ export function Todos() {
                         {l.name}
                       </option>
                     ))}
+                    {state.provider === "google" && <option value={NEW_LIST}>+ New list…</option>}
                   </select>
                 )}
                 <button disabled={pending} className="ml-auto rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white disabled:opacity-60">

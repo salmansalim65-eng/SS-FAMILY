@@ -38,7 +38,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <GeneralForm settings={settings} />
       </SettingsBlock>
 
-      <SettingsBlock id="calendar" title="Google Calendar" hint="Shows your week and upcoming events on the dashboard, and lets you add new ones.">
+      <SettingsBlock id="calendar" title="Google (Calendar & Tasks)" hint="Your week and upcoming events, adding events, and your Google Tasks in the Tasks panel.">
         <GoogleCalendarSettings connection={google} result={params.google} />
       </SettingsBlock>
 
