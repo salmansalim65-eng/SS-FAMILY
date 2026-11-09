@@ -37,6 +37,7 @@ export type DashboardCard = {
   higher_is_better: boolean;
   sort_order: number;
   is_active: boolean;
+  link: string | null; // path in the project's app, or a full URL
 };
 
 /** What the browser gets back for one card. */

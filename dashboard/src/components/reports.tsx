@@ -13,6 +13,7 @@ export type CardMeta = {
   id: string;
   project: string;
   title: string;
+  link: string | null;
   format: CardFormat;
   higher_is_better: boolean;
 };
@@ -137,6 +138,7 @@ export function Reports({
                   .map((card) => (
                     <KpiCard
                       key={card.id}
+                      href={cardHref(card.link, app?.url)}
                       theme={theme}
                       card={card}
                       currency={currency}
@@ -159,7 +161,20 @@ function updatedAt(ps: ProjectState | undefined) {
   return first ? timeFmt.format(new Date(first.updatedAt)) : null;
 }
 
+/** A card's link as a full URL: paths are joined to the project's app URL. */
+function cardHref(link: string | null, appUrl?: string) {
+  if (!link) return undefined;
+  if (/^https?:\/\//.test(link)) return link;
+  if (!appUrl || !/^https?:\/\//.test(appUrl)) return undefined;
+  try {
+    return new URL(link, appUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function KpiCard({
+  href,
   theme,
   card,
   result,
@@ -167,6 +182,7 @@ function KpiCard({
   projectError,
   currency,
 }: {
+  href?: string;
   theme?: Theme;
   card: CardMeta;
   result?: CardResult;
@@ -189,7 +205,9 @@ function KpiCard({
 
   return (
     <article
-      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-surface shadow-sm ${theme ? "" : "border-line p-2.5 sm:p-3"}`}
+      className={`relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-surface shadow-sm ${theme ? "" : "border-line p-2.5 sm:p-3"} ${
+        href ? "transition hover:-translate-y-0.5 hover:shadow-md" : ""
+      }`}
       style={theme ? { borderColor: `color-mix(in srgb, ${theme.accent} 35%, var(--line))` } : undefined}
       title={card.title}
     >
@@ -269,6 +287,10 @@ function KpiCard({
         >
           {detail.note}
         </p>
+      )}
+      {href && (
+        // Covers the whole card, so a click anywhere opens the report in the project's app.
+        <a href={href} target="_blank" rel="noopener noreferrer" className="absolute inset-0 rounded-xl" aria-label={`Open ${card.title} report`} />
       )}
     </article>
   );

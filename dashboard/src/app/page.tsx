@@ -27,10 +27,11 @@ export default async function Home() {
   const appByKey: Record<string, ProjectApp> = Object.fromEntries(
     apps.map((a) => [projectKey(a.name), { name: a.name, icon: a.icon, color: a.color, url: a.url }]),
   );
-  const cardMeta: CardMeta[] = cards.map(({ id, project, title, format, higher_is_better }) => ({
+  const cardMeta: CardMeta[] = cards.map(({ id, project, title, link, format, higher_is_better }) => ({
     id,
     project,
     title,
+    link,
     format,
     higher_is_better,
   }));
