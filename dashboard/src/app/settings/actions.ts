@@ -57,7 +57,6 @@ export async function saveGeneral(form: FormData) {
     if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a 3-letter code such as PKR");
 
     const rows = [
-      { key: "display_name", value: str(form, "display_name") || "Friend" },
       { key: "currency", value: currency },
       { key: "google_calendar_embed_url", value: embed || null },
     ];

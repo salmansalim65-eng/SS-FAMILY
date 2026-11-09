@@ -34,25 +34,27 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-10 px-4 py-6 sm:px-6 sm:py-10">
-      <Header name={settings.display_name} />
+      <Header />
 
-      <Section title="My Projects">
-        <AppGrid apps={projects} />
-      </Section>
+      <div className="space-y-6">
+        <Section title="My Projects">
+          <AppGrid apps={projects} />
+        </Section>
+        {personal.length > 0 && (
+          <Section title="Personal">
+            <AppGrid apps={personal} />
+          </Section>
+        )}
+      </div>
 
       <Notes initial={notes} />
 
       <Reports cards={cardMeta} currency={settings.currency} color={color} order={[...projects, ...personal].map((a) => projectKey(a.name))} />
 
-      <Section title="Personal">
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
-            <AppGrid apps={personal} compact />
-          </div>
-          <CalendarEvents
-            fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
-          />
-        </div>
+      <Section title="Calendar">
+        <CalendarEvents
+          fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
+        />
       </Section>
     </main>
   );
