@@ -3,7 +3,7 @@
 import { GoogleNotConnected } from "@/lib/google";
 import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
-import { importGoogleTasks } from "@/lib/google-tasks";
+import { deleteGoogleTaskList, importGoogleTasks, moveGoogleTask } from "@/lib/google-tasks";
 import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { forgetTask, REMIND_CHOICES, saveTaskSchedule, taskDoneChanged } from "@/lib/task-reminders";
 import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
@@ -145,5 +145,32 @@ export async function importTodoTasks(text: string): Promise<TodoResult<{ added:
     const { supabase, provider: p } = await provider();
     if (p !== "google") throw new Error("Import works with Google Tasks — connect Google first.");
     return importGoogleTasks(supabase, groups);
+  });
+}
+
+/** Moves a task to another list; its dashboard colour, time and reminder follow it. */
+export async function moveTodoTask(listId: string, taskId: string, toListId: string): Promise<TodoResult<{ id: string }>> {
+  return attempt(async () => {
+    if (!listId || !taskId || !toListId) throw new Error("Pick a list.");
+    if (listId === toListId) return { id: taskId };
+    const { supabase, provider: p } = await provider();
+    if (p !== "google") throw new Error("Moving tasks works with Google Tasks.");
+    const id = await moveGoogleTask(supabase, listId, taskId, toListId);
+    if (id !== taskId) {
+      await supabase.from("dashboard_task_colors").update({ task_id: id }).eq("task_id", taskId);
+      await supabase.from("dashboard_task_times").update({ task_id: id }).eq("task_id", taskId);
+    }
+    return { id };
+  });
+}
+
+/** Deletes a list and every task in it (Google Tasks); its dashboard colour goes too. */
+export async function deleteTodoList(listId: string): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    if (!listId) throw new Error("Unknown list.");
+    const { supabase, provider: p } = await provider();
+    if (p !== "google") throw new Error("Lists are deleted in Microsoft To Do itself.");
+    await deleteGoogleTaskList(supabase, listId);
+    await supabase.from("dashboard_list_colors").delete().eq("list_id", listId);
   });
 }

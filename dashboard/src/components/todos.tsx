@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoTask, importTodoTasks, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, importTodoTasks, moveTodoTask, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { karachiToday, addDays } from "@/lib/time";
@@ -226,6 +226,18 @@ export function Todos() {
   useEffect(() => setCanNotify(typeof Notification === "undefined" ? "unsupported" : Notification.permission), []);
   const hasReminders = state.status === "ready" && state.tasks.some((t) => t.remind !== null && t.remind !== undefined);
 
+  // Deletes a list and its tasks in Google Tasks, after asking.
+  function removeList(list: TodoList) {
+    const n = state.status === "ready" ? state.tasks.filter((t) => t.listId === list.id && !t.done).length : 0;
+    if (!confirm(`Delete the list "${list.name}"${n ? ` and its ${n} open task${n === 1 ? "" : "s"}` : ""}? This can't be undone.`)) return;
+    setError(null);
+    start(async () => {
+      const res = await deleteTodoList(list.id);
+      if (!res.ok) return setError(res.error);
+      await load();
+    });
+  }
+
   function paintList(listId: string, color: ListColor | null) {
     const before = state.status === "ready" ? (state.lists.find((l) => l.id === listId)?.color ?? null) : null;
     const paint = (c: ListColor | null) =>
@@ -249,6 +261,7 @@ export function Todos() {
         layout={layout}
         color={listColor(list, i)}
         onColor={(c) => paintList(list.id, c)}
+        onDelete={ready!.provider === "google" && !list.isDefault ? () => removeList(list) : undefined}
         list={list}
         tasks={ready!.tasks.filter((t) => t.listId === list.id)}
         isDone={isDone}
@@ -372,6 +385,14 @@ export function Todos() {
           {detail && (
             <TaskDetail
               task={detail}
+              lists={state.provider === "google" ? state.lists : []}
+              onMove={async (toListId) => {
+                const res = await moveTodoTask(detail.listId, detail.id, toListId);
+                if (!res.ok) return res.error;
+                setDetail(null);
+                await load();
+                return null;
+              }}
               done={isDone(detail)}
               openUrl={OPEN_URL[state.provider]}
               onClose={() => setDetail(null)}
@@ -419,9 +440,11 @@ function ListSection({
   onAdd,
   color,
   onColor,
+  onDelete,
 }: {
   color: (typeof LIST_COLORS)[number];
   onColor: (c: ListColor | null) => void;
+  onDelete?: () => void;
   layout: "stack" | "board";
   list: TodoList;
   tasks: TodoTask[];
@@ -462,7 +485,7 @@ function ListSection({
           onClick={() => setPicking((p) => !p)}
           aria-label={`Colour for ${list.name}`}
           aria-expanded={picking}
-          title="Heading colour"
+          title={onDelete ? "Colour / delete list" : "Heading colour"}
           className="grid size-6 shrink-0 place-items-center rounded-full text-xs opacity-60 hover:bg-white/50 hover:opacity-100 dark:hover:bg-black/20"
         >
           🎨
@@ -486,6 +509,15 @@ function ListSection({
           {list.color && (
             <button type="button" onClick={() => (onColor(null), setPicking(false))} className="ml-1 text-xs text-muted hover:text-fg">
               Auto
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => (setPicking(false), onDelete())}
+              className="ml-auto rounded-lg px-2 py-0.5 text-xs text-danger hover:bg-danger-soft"
+            >
+              🗑 Delete list
             </button>
           )}
         </div>
@@ -706,6 +738,8 @@ function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: s
 /** A task opened from the list: edit its title, notes and due date, tick it, or delete it. */
 function TaskDetail({
   task,
+  lists,
+  onMove,
   done,
   openUrl,
   onClose,
@@ -714,6 +748,8 @@ function TaskDetail({
   onColor,
 }: {
   task: TodoTask;
+  lists: TodoList[];
+  onMove: (toListId: string) => Promise<string | null>;
   done: boolean;
   openUrl: string;
   onClose: () => void;
@@ -773,10 +809,38 @@ function TaskDetail({
         className="w-full max-w-md space-y-3 rounded-2xl border border-line bg-surface p-5 shadow-xl"
       >
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-muted">
-            {task.listName}
-            {done && " · Completed"}
-          </p>
+          {lists.length > 1 ? (
+            <label className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
+              List
+              <select
+                value={task.listId}
+                disabled={pending}
+                onChange={(e) => {
+                  const to = e.target.value;
+                  setError(null);
+                  start(async () => {
+                    const err = await onMove(to);
+                    if (err) setError(err);
+                  });
+                }}
+                aria-label="Move to list"
+                title="Move this task to another list"
+                className="min-w-0 rounded-lg border border-line bg-surface px-2 py-1 text-xs text-fg"
+              >
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              {done && <span>· Completed</span>}
+            </label>
+          ) : (
+            <p className="text-xs text-muted">
+              {task.listName}
+              {done && " · Completed"}
+            </p>
+          )}
           <button type="button" onClick={onClose} className="text-muted hover:text-fg" aria-label="Close">
             ✕
           </button>

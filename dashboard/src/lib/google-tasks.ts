@@ -7,7 +7,7 @@ import type { TodoList, TodoTask, TodoTaskEdit } from "@/lib/types";
 // the calendar (it needs the tasks scope, granted on Reconnect).
 
 const API = "https://tasks.googleapis.com/tasks/v1";
-const MAX_LISTS = 10;
+const MAX_LISTS = 20;
 
 async function call<T>(token: string, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -132,4 +132,33 @@ export async function importGoogleTasks(db: SupabaseClient, groups: { list: stri
     }
   }
   return { added, createdLists };
+}
+
+/**
+ * Moves a task to another list and returns its id there. Uses Google's move
+ * with a destination list; where that isn't accepted, copies the task (title,
+ * notes, due date, done state) into the other list and deletes the original.
+ */
+export async function moveGoogleTask(db: SupabaseClient, fromList: string, taskId: string, toList: string): Promise<string> {
+  const token = await accessToken(db);
+  const src = `/lists/${encodeURIComponent(fromList)}/tasks/${encodeURIComponent(taskId)}`;
+  try {
+    const moved = await call<GTask>(token, `${src}/move?destinationTasklist=${encodeURIComponent(toList)}`, { method: "POST" });
+    if (moved?.id) return moved.id;
+  } catch (e) {
+    if (e instanceof GoogleNotConnected) throw e;
+  }
+  const t = await call<GTask>(token, src);
+  const copy = await call<GTask>(token, `/lists/${encodeURIComponent(toList)}/tasks`, {
+    method: "POST",
+    body: { title: t.title ?? "", notes: t.notes, due: t.due, status: t.status ?? "needsAction" },
+  });
+  await call(token, src, { method: "DELETE" });
+  return copy.id;
+}
+
+/** Deletes a whole task list with its tasks. Google keeps its default list. */
+export async function deleteGoogleTaskList(db: SupabaseClient, listId: string) {
+  const token = await accessToken(db);
+  await call(token, `/users/@me/lists/${encodeURIComponent(listId)}`, { method: "DELETE" });
 }
