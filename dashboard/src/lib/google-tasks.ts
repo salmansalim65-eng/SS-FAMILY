@@ -25,7 +25,17 @@ async function call<T>(token: string, path: string, init: { method?: string; bod
 }
 
 type GList = { id: string; title: string };
-type GTask = { id: string; title?: string; notes?: string; status?: string; due?: string; updated?: string };
+type GTask = {
+  id: string;
+  title?: string;
+  notes?: string;
+  status?: string;
+  due?: string;
+  updated?: string;
+  completed?: string;
+  parent?: string;
+  position?: string;
+};
 
 /** Every task list (the first is Google's default "My Tasks") and their open tasks. */
 export async function listGoogleTasks(db: SupabaseClient): Promise<{ lists: TodoList[]; tasks: TodoTask[] }> {
@@ -36,16 +46,20 @@ export async function listGoogleTasks(db: SupabaseClient): Promise<{ lists: Todo
 
   const perList = await Promise.allSettled(
     lists.map(async (list) => {
-      // Open tasks, and separately the ones completed in the last week (hidden
-      // ones included: Google hides a completed task once it is cleared).
+      // Open tasks, and separately the completed ones (hidden ones included:
+      // Google hides a completed task once it is cleared). A list's tasks are
+      // shown with the ones completed in the last week; checklist items
+      // (Google subtasks) are kept whenever they were ticked.
       const base = `/lists/${encodeURIComponent(list.id)}/tasks?maxResults=100`;
       const [open, finished] = await Promise.all([
         call<{ items?: GTask[] }>(token, `${base}&showCompleted=false`),
-        call<{ items?: GTask[] }>(token, `${base}&showCompleted=true&showHidden=true&completedMin=${encodeURIComponent(weekAgo)}`),
+        allPages(token, `${base}&showCompleted=true&showHidden=true`),
       ]);
-      const items = [...(open.items ?? []), ...(finished.items ?? []).filter((t) => t.status === "completed")];
-      return items
-        .filter((t) => t.title?.trim())
+      const all = [...(open.items ?? []), ...finished.filter((t) => t.status === "completed")].filter((t) => t.title?.trim());
+      const subtasks = new Map<string, GTask[]>();
+      for (const t of all) if (t.parent) subtasks.set(t.parent, [...(subtasks.get(t.parent) ?? []), t]);
+      return all
+        .filter((t) => !t.parent && (t.status !== "completed" || (t.completed ?? t.updated ?? "") >= weekAgo))
         .map<TodoTask>((t) => ({
           id: t.id,
           listId: list.id,
@@ -57,6 +71,9 @@ export async function listGoogleTasks(db: SupabaseClient): Promise<{ lists: Todo
           created: t.updated ?? null,
           notes: t.notes?.trim() || null,
           done: t.status === "completed",
+          subtasks: (subtasks.get(t.id) ?? [])
+            .sort((a, b) => (a.position ?? "").localeCompare(b.position ?? ""))
+            .map((x) => ({ id: x.id, title: x.title!.trim(), done: x.status === "completed" })),
         }));
     }),
   );
@@ -66,6 +83,26 @@ export async function listGoogleTasks(db: SupabaseClient): Promise<{ lists: Todo
     .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
     .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (b.created ?? "").localeCompare(a.created ?? ""));
   return { lists, tasks };
+}
+
+/** Up to 300 tasks of one request, following Google's page tokens. */
+async function allPages(token: string, path: string): Promise<GTask[]> {
+  const out: GTask[] = [];
+  let page: string | undefined;
+  for (let i = 0; i < 3; i++) {
+    const res = await call<{ items?: GTask[]; nextPageToken?: string }>(token, page ? `${path}&pageToken=${encodeURIComponent(page)}` : path);
+    out.push(...(res.items ?? []));
+    page = res.nextPageToken;
+    if (!page) break;
+  }
+  return out;
+}
+
+/** Adds a checklist item (a Google subtask) under a task, at the end. */
+export async function addGoogleSubtask(db: SupabaseClient, listId: string, parentId: string, title: string, after: string | null) {
+  const token = await accessToken(db);
+  const q = new URLSearchParams({ parent: parentId, ...(after ? { previous: after } : {}) });
+  await call(token, `/lists/${encodeURIComponent(listId)}/tasks?${q}`, { method: "POST", body: { title } });
 }
 
 /** Adds a task and returns its id. */

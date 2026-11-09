@@ -3,10 +3,10 @@
 import { GoogleNotConnected } from "@/lib/google";
 import { MicrosoftNotConnected } from "@/lib/microsoft";
 import { requireOwner } from "@/lib/supabase/server";
-import { deleteGoogleTaskList, moveGoogleTask } from "@/lib/google-tasks";
+import { addGoogleSubtask, deleteGoogleTaskList, moveGoogleTask } from "@/lib/google-tasks";
 import { forgetTask, REMIND_CHOICES, saveTaskSchedule, taskDoneChanged } from "@/lib/task-reminders";
 import { addTask, createList, deleteTask, setTaskDone, todoProvider, updateTask } from "@/lib/todo";
-import type { ListColor, NoteColor, TodoList, TodoTaskEdit } from "@/lib/types";
+import type { ListColor, NoteColor, TaskPriority, TodoList, TodoTaskEdit } from "@/lib/types";
 
 const COLORS: NoteColor[] = ["yellow", "pink", "green", "blue", "purple", "orange"];
 
@@ -145,6 +145,7 @@ export async function moveTodoTask(listId: string, taskId: string, toListId: str
     if (id !== taskId) {
       await supabase.from("dashboard_task_colors").update({ task_id: id }).eq("task_id", taskId);
       await supabase.from("dashboard_task_times").update({ task_id: id }).eq("task_id", taskId);
+      await supabase.from("dashboard_task_meta").update({ task_id: id }).eq("task_id", taskId);
     }
     return { id };
   });
@@ -168,5 +169,32 @@ export async function setTodoListOrder(listIds: string[]): Promise<TodoResult<vo
     const ids = (Array.isArray(listIds) ? listIds : []).filter((x) => typeof x === "string" && x.length > 0 && x.length <= 200).slice(0, 100);
     const { error } = await supabase.from("dashboard_settings").upsert({ key: "task_list_order", value: ids });
     if (error) throw new Error(error.message);
+  });
+}
+
+const PRIORITIES: TaskPriority[] = ["urgent", "important", "medium", "low"];
+
+/** The dashboard's own priority for a task; null clears it. */
+export async function setTodoTaskPriority(taskId: string, priority: TaskPriority | null): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const { supabase } = await requireOwner();
+    if (!taskId || taskId.length > 200) throw new Error("Unknown task.");
+    if (priority && !PRIORITIES.includes(priority)) throw new Error("Unknown priority.");
+    const { error } = priority
+      ? await supabase.from("dashboard_task_meta").upsert({ task_id: taskId, priority })
+      : await supabase.from("dashboard_task_meta").delete().eq("task_id", taskId);
+    if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "Priorities aren't set up yet." : error.message);
+  });
+}
+
+/** Adds a checklist item (a Google subtask) to a task, after the last one. */
+export async function addTodoSubtask(listId: string, parentId: string, title: string, after: string | null): Promise<TodoResult<void>> {
+  return attempt(async () => {
+    const clean = title.trim().slice(0, 255);
+    if (!clean) throw new Error("Write the item first.");
+    if (!listId || !parentId) throw new Error("Unknown task.");
+    const { supabase, provider: p } = await provider();
+    if (p !== "google") throw new Error("Checklists work with Google Tasks.");
+    await addGoogleSubtask(supabase, listId, parentId, clean, after);
   });
 }
