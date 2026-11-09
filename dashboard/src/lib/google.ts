@@ -208,10 +208,8 @@ export async function listEvents(
   const token = await accessToken(db);
   const list = await calendarGet<{ items?: GCalendar[] }>(token, "/users/me/calendarList", { minAccessRole: "reader" });
   const calendars = (list.items ?? [])
-    // Every calendar in the list except ones hidden from it: Google leaves
-    // "selected" unset on many calendars (e.g. ones made in the app), so it
-    // can't be trusted to mean "shown".
-    .filter((c) => c.primary || !c.hidden)
+    // Only the calendars ticked in Google Calendar (and the primary one).
+    .filter((c) => c.primary || (c.selected && !c.hidden))
     .sort((a, b) => Number(!!b.primary) - Number(!!a.primary))
     .slice(0, MAX_CALENDARS);
 
