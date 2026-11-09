@@ -18,13 +18,15 @@ export async function GET() {
       listTasks(owner.supabase, provider),
       // Missing tables (migration not run yet) just mean no colours / times.
       owner.supabase.from("dashboard_task_colors").select("task_id, color"),
-      owner.supabase.from("dashboard_task_times").select("task_id, due_time"),
+      owner.supabase.from("dashboard_task_times").select("task_id, due_time, remind_minutes"),
     ]);
     const colorOf = new Map((colors.data ?? []).map((c) => [c.task_id as string, c.color]));
     const timeOf = new Map((times.data ?? []).map((c) => [c.task_id as string, String(c.due_time).slice(0, 5)]));
+    const remindOf = new Map((times.data ?? []).map((c) => [c.task_id as string, c.remind_minutes as number | null]));
     for (const t of tasks) {
       t.color = colorOf.get(t.id) ?? null;
       t.time = t.due ? (timeOf.get(t.id) ?? null) : null;
+      t.remind = t.time ? (remindOf.get(t.id) ?? null) : null;
     }
     return NextResponse.json({ connected: true, provider, lists, tasks }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {

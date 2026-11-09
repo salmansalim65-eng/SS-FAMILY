@@ -35,6 +35,73 @@ const hmFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour:
 const nowHm = () => hmFmt.format(new Date());
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 
+// Reminder choices: minutes before the due time (null = none).
+const REMINDERS: { value: number | null; label: string }[] = [
+  { value: null, label: "No reminder" },
+  { value: 0, label: "At the time" },
+  { value: 5, label: "5 min before" },
+  { value: 10, label: "10 min before" },
+  { value: 15, label: "15 min before" },
+  { value: 30, label: "30 min before" },
+  { value: 60, label: "1 hour before" },
+  { value: 120, label: "2 hours before" },
+  { value: 1440, label: "1 day before" },
+];
+const DEFAULT_REMIND = 10;
+const NOTIFIED_KEY = "dashboard.taskNotified";
+
+/** Asks once for permission to show reminders as browser notifications. */
+function askNotifyPermission() {
+  if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+
+/**
+ * While the dashboard is open, rings each reminder as a browser notification
+ * (the phone gets the same reminder from Google Calendar). Each one rings once,
+ * remembered in this browser, and only up to 2 hours late.
+ */
+function useTaskNotifications(tasks: TodoTask[], isDone: (t: TodoTask) => boolean) {
+  const latest = useRef({ tasks, isDone });
+  latest.current = { tasks, isDone };
+  useEffect(() => {
+    function check() {
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      let seen: string[] = [];
+      try {
+        seen = JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? "[]");
+      } catch {}
+      const now = Date.now();
+      let changed = false;
+      for (const t of latest.current.tasks) {
+        if (!t.due || !t.time || t.remind === null || t.remind === undefined || latest.current.isDone(t)) continue;
+        // Karachi is UTC+5 all year.
+        const dueAt = Date.parse(`${t.due}T${t.time}:00+05:00`);
+        const ringAt = dueAt - t.remind * 60_000;
+        const key = `${t.id}@${t.due}T${t.time}-${t.remind}`;
+        if (now < ringAt || now > dueAt + 2 * 3600_000 || seen.includes(key)) continue;
+        try {
+          const n = new Notification(`⏰ ${t.title}`, {
+            body: `${t.remind === 0 ? "Now" : `At ${clock(t.time)}`} · ${t.listName}`,
+            tag: key,
+            icon: "/logos/ss-dashboard-512.png",
+          });
+          n.onclick = () => window.focus();
+        } catch {}
+        seen.push(key);
+        changed = true;
+      }
+      if (changed) {
+        try {
+          localStorage.setItem(NOTIFIED_KEY, JSON.stringify(seen.slice(-200)));
+        } catch {}
+      }
+    }
+    check();
+    const t = setInterval(check, 30_000);
+    return () => clearInterval(t);
+  }, []);
+}
+
 /** "15:30" → "3:30 PM". */
 function clock(time: string) {
   const [h, m] = time.split(":").map(Number);
@@ -105,8 +172,8 @@ export function Todos() {
     });
   }
 
-  async function add(listId: string, title: string, due: string | null, time: string | null): Promise<string | null> {
-    const res = await addTodoTask(listId, title, due, time);
+  async function add(listId: string, title: string, due: string | null, time: string | null, remind: number | null): Promise<string | null> {
+    const res = await addTodoTask(listId, title, due, time, remind);
     if (!res.ok) return res.error;
     await load();
     return null;
@@ -128,13 +195,18 @@ export function Todos() {
     const next = !isDone(task);
     setDoneLocal(task.id, next);
     start(async () => {
-      const res = await setTodoTaskDone(task.listId, task.id, next);
+      const res = await setTodoTaskDone(task.listId, task.id, next, { title: task.title, due: task.due });
       if (!res.ok) {
         setError(res.error);
         setDoneLocal(task.id, undefined);
       }
     });
   }
+
+  useTaskNotifications(state.status === "ready" ? state.tasks : [], isDone);
+  const [canNotify, setCanNotify] = useState<NotificationPermission | "unsupported">("granted");
+  useEffect(() => setCanNotify(typeof Notification === "undefined" ? "unsupported" : Notification.permission), []);
+  const hasReminders = state.status === "ready" && state.tasks.some((t) => t.remind !== null && t.remind !== undefined);
 
   const dates: Dates = { today: ymd(karachiToday()), tomorrow: ymd(addDays(karachiToday(), 1)), now: nowHm() };
   const ready = state.status === "ready" ? state : null;
@@ -163,6 +235,16 @@ export function Todos() {
       <button type="button" onClick={load} className="text-muted hover:text-fg" aria-label="Refresh tasks">
         ↻
       </button>
+      {hasReminders && canNotify === "default" && (
+        <button
+          type="button"
+          onClick={() => Notification.requestPermission().then(setCanNotify).catch(() => {})}
+          className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+          title="Show reminders as notifications on this computer"
+        >
+          🔔 Allow alerts
+        </button>
+      )}
       {ready && !inBoard && (
         <button type="button" onClick={() => setBoard(true)} className="text-muted hover:text-fg" title="All lists side by side">
           ⤢ Board
@@ -296,7 +378,7 @@ function ListSection({
   dates: Dates;
   onToggle: (t: TodoTask) => void;
   onOpen: (t: TodoTask) => void;
-  onAdd: (listId: string, title: string, due: string | null, time: string | null) => Promise<string | null>;
+  onAdd: (listId: string, title: string, due: string | null, time: string | null, remind: number | null) => Promise<string | null>;
 }) {
   const [showCompleted, setShowCompleted] = useState(false);
   const [folded, setFolded] = useState(false);
@@ -318,7 +400,7 @@ function ListSection({
       </button>
       {!folded && (
         <div className={board ? "min-h-0 flex-1 overflow-y-auto pr-1" : "mt-1.5"}>
-          <AddTask onAdd={(title, due, time) => onAdd(list.id, title, due, time)} />
+          <AddTask onAdd={(title, due, time, remind) => onAdd(list.id, title, due, time, remind)} />
           {open.length === 0 ? (
             <p className="px-1.5 py-1.5 text-xs text-muted">{finished.length ? "All done 🎉" : "No tasks yet"}</p>
           ) : (
@@ -392,6 +474,7 @@ function TaskRow({
           title="Due"
           className={`mt-px shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${label.chip}`}
         >
+          {t.remind !== null && t.remind !== undefined && t.time && <span aria-label="Reminder set">🔔 </span>}
           {label.text}
         </button>
       )}
@@ -400,11 +483,12 @@ function TaskRow({
 }
 
 /** "+ Add a task" for one list: opens into a box with 🎤 and an optional due date. */
-function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: string | null) => Promise<string | null> }) {
+function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: string | null, remind: number | null) => Promise<string | null> }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [time, setTime] = useState("");
+  const [remind, setRemind] = useState<number | null>(DEFAULT_REMIND);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
@@ -431,7 +515,9 @@ function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: s
     if (!title.trim()) return;
     setError(null);
     start(async () => {
-      const err = await onAdd(title, due || null, (due && time) || null);
+      const withTime = (due && time) || null;
+      if (withTime && remind !== null) askNotifyPermission();
+      const err = await onAdd(title, due || null, withTime, withTime ? remind : null);
       if (err) return setError(err);
       setTitle("");
       setDue("");
@@ -513,6 +599,7 @@ function AddTask({ onAdd }: { onAdd: (title: string, due: string | null, time: s
           aria-label="Due time"
           className="rounded-lg border border-line bg-surface px-2 py-1 text-xs"
         />
+        {time && <ReminderSelect value={remind} onChange={setRemind} small />}
         <button type="button" onClick={cancel} className="ml-auto rounded-lg px-2 py-1 text-xs text-muted hover:text-fg">
           Cancel
         </button>
@@ -546,6 +633,7 @@ function TaskDetail({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [due, setDue] = useState(task.due ?? "");
   const [time, setTime] = useState(task.time ?? "");
+  const [remind, setRemind] = useState<number | null>(task.time ? (task.remind ?? null) : DEFAULT_REMIND);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -558,8 +646,15 @@ function TaskDetail({
   function save(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (due && time && remind !== null) askNotifyPermission();
     start(async () => {
-      const res = await updateTodoTask(task.listId, task.id, { title, notes, due: due || null, time: (due && time) || null });
+      const res = await updateTodoTask(task.listId, task.id, {
+        title,
+        notes,
+        due: due || null,
+        time: (due && time) || null,
+        remind: due && time ? remind : null,
+      });
       if (!res.ok) return setError(res.error);
       await onSaved();
     });
@@ -631,6 +726,12 @@ function TaskDetail({
             </button>
           )}
         </label>
+        {due && time && (
+          <label className="flex items-center gap-2 text-sm text-muted">
+            🔔 Reminder
+            <ReminderSelect value={remind} onChange={setRemind} />
+          </label>
+        )}
         <div className="flex items-center gap-1.5" role="group" aria-label="Colour">
           <span className="mr-1 text-sm text-muted">Colour</span>
           <button
@@ -674,5 +775,22 @@ function TaskDetail({
         </div>
       </form>
     </div>
+  );
+}
+
+function ReminderSelect({ value, onChange, small }: { value: number | null; onChange: (v: number | null) => void; small?: boolean }) {
+  return (
+    <select
+      value={value === null ? "" : String(value)}
+      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+      aria-label="Reminder"
+      className={`rounded-lg border border-line bg-surface px-2 py-1 text-fg ${small ? "text-xs" : "text-sm"}`}
+    >
+      {REMINDERS.map((r) => (
+        <option key={r.label} value={r.value === null ? "" : String(r.value)}>
+          {small && r.value !== null ? `🔔 ${r.label}` : r.label}
+        </option>
+      ))}
+    </select>
   );
 }
