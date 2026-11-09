@@ -6,8 +6,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "My Dashboard",
+  title: "SS Dashboard",
   description: "Home screen for all my projects",
+  appleWebApp: { title: "SS Dashboard", capable: true, statusBarStyle: "default" },
   robots: { index: false, follow: false },
 };
 
