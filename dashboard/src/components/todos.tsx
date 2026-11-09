@@ -35,6 +35,18 @@ const hmFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Karachi", hour:
 const nowHm = () => hmFmt.format(new Date());
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 
+// A coloured heading strip per list, in list order (like the project cards' bands).
+const LIST_BANDS = [
+  "from-blue-600 to-sky-500",
+  "from-violet-600 to-fuchsia-500",
+  "from-emerald-600 to-teal-500",
+  "from-orange-500 to-amber-400",
+  "from-rose-600 to-pink-500",
+  "from-cyan-600 to-sky-400",
+  "from-indigo-600 to-blue-500",
+  "from-lime-600 to-green-500",
+];
+
 // Reminder choices: minutes before the due time (null = none).
 const REMINDERS: { value: number | null; label: string }[] = [
   { value: null, label: "No reminder" },
@@ -211,10 +223,11 @@ export function Todos() {
   const dates: Dates = { today: ymd(karachiToday()), tomorrow: ymd(addDays(karachiToday(), 1)), now: nowHm() };
   const ready = state.status === "ready" ? state : null;
   const sections = (layout: "stack" | "board") =>
-    ready!.lists.map((list) => (
+    ready!.lists.map((list, i) => (
       <ListSection
         key={list.id}
         layout={layout}
+        band={LIST_BANDS[i % LIST_BANDS.length]}
         list={list}
         tasks={ready!.tasks.filter((t) => t.listId === list.id)}
         isDone={isDone}
@@ -226,7 +239,7 @@ export function Todos() {
     ));
 
   const headerButtons = (inBoard: boolean) => (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs [&>*]:whitespace-nowrap">
       {ready?.provider === "google" && (
         <button type="button" onClick={newList} disabled={pending} className="text-muted hover:text-fg">
           + List
@@ -242,7 +255,7 @@ export function Todos() {
           className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
           title="Show reminders as notifications on this computer"
         >
-          🔔 Allow alerts
+          🔔 Alerts
         </button>
       )}
       {ready && !inBoard && (
@@ -370,7 +383,9 @@ function ListSection({
   onToggle,
   onOpen,
   onAdd,
+  band,
 }: {
+  band: string;
   layout: "stack" | "board";
   list: TodoList;
   tasks: TodoTask[];
@@ -387,19 +402,27 @@ function ListSection({
   const board = layout === "board";
 
   return (
-    <div className={board ? "flex max-h-full w-80 shrink-0 flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm" : "rounded-xl border border-line/70 p-2.5"}>
+    <div
+      className={
+        board
+          ? "flex max-h-full w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm"
+          : "overflow-hidden rounded-xl border border-line/70"
+      }
+    >
       <button
         type="button"
         onClick={() => !board && setFolded((f) => !f)}
         aria-expanded={board ? undefined : !folded}
-        className={`flex w-full items-center gap-2 text-left ${board ? "mb-2 cursor-default text-lg" : "text-sm"} font-semibold`}
+        className={`flex w-full items-center gap-2 bg-gradient-to-r ${band} text-left font-semibold text-white ${
+          board ? "cursor-default px-4 py-2.5 text-lg" : "px-2.5 py-1.5 text-sm"
+        }`}
       >
-        {!board && <span className="w-3 text-xs text-muted">{folded ? "▸" : "▾"}</span>}
+        {!board && <span className="w-3 text-xs text-white/80">{folded ? "▸" : "▾"}</span>}
         <span className="min-w-0 flex-1 truncate">{list.name}</span>
-        <span className="text-xs font-normal text-muted">{open.length || ""}</span>
+        {open.length > 0 && <span className="rounded-full bg-white/25 px-1.5 text-xs font-medium">{open.length}</span>}
       </button>
       {!folded && (
-        <div className={board ? "min-h-0 flex-1 overflow-y-auto pr-1" : "mt-1.5"}>
+        <div className={board ? "min-h-0 flex-1 overflow-y-auto p-3 pr-2" : "p-2"}>
           <AddTask onAdd={(title, due, time, remind) => onAdd(list.id, title, due, time, remind)} />
           {open.length === 0 ? (
             <p className="px-1.5 py-1.5 text-xs text-muted">{finished.length ? "All done 🎉" : "No tasks yet"}</p>
