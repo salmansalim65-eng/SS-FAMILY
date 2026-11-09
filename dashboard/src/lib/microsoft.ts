@@ -211,12 +211,14 @@ export async function listTodos(db: SupabaseClient): Promise<{ lists: TodoList[]
   return { lists, tasks };
 }
 
-export async function addTodo(db: SupabaseClient, listId: string, title: string, due: string | null) {
+/** Adds a task and returns its id. */
+export async function addTodo(db: SupabaseClient, listId: string, title: string, due: string | null): Promise<string | null> {
   const token = await accessToken(db);
-  await graph(token, `/me/todo/lists/${encodeURIComponent(listId)}/tasks`, {
+  const created = await graph<{ id?: string } | undefined>(token, `/me/todo/lists/${encodeURIComponent(listId)}/tasks`, {
     method: "POST",
     body: { title, ...(due ? { dueDateTime: { dateTime: `${due}T00:00:00`, timeZone: GRAPH_TIME_ZONE } } : {}) },
   });
+  return created?.id ?? null;
 }
 
 export async function setTodoDone(db: SupabaseClient, listId: string, taskId: string, done: boolean) {

@@ -11,6 +11,18 @@ const COLORS: NoteColor[] = ["yellow", "pink", "green", "blue", "purple", "orang
 export type TodoResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Google Tasks keeps only a due date, so the time is the dashboard's own,
+ * kept by task id (null clears it). A missing table just means no times.
+ */
+async function saveTime(db: Awaited<ReturnType<typeof requireOwner>>["supabase"], taskId: string, time: string | null) {
+  const { error } = time
+    ? await db.from("dashboard_task_times").upsert({ task_id: taskId, due_time: time })
+    : await db.from("dashboard_task_times").delete().eq("task_id", taskId);
+  if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "Task times aren't set up yet." : error.message);
+}
 
 async function attempt<T>(fn: () => Promise<T>): Promise<TodoResult<T>> {
   try {
@@ -30,14 +42,16 @@ async function provider() {
   return { supabase, provider };
 }
 
-export async function addTodoTask(listId: string, title: string, due: string | null): Promise<TodoResult<void>> {
+export async function addTodoTask(listId: string, title: string, due: string | null, time: string | null = null): Promise<TodoResult<void>> {
   return attempt(async () => {
     const clean = title.trim().slice(0, 255);
     if (!clean) throw new Error("Write the task first.");
     if (!listId) throw new Error("Pick a list.");
     if (due && !DATE.test(due)) throw new Error("That due date is not valid.");
+    if (time && (!due || !TIME.test(time))) throw new Error(due ? "That time is not valid." : "Pick a due date for the time.");
     const { supabase, provider: p } = await provider();
-    await addTask(supabase, p, listId, clean, due || null);
+    const id = await addTask(supabase, p, listId, clean, due || null);
+    if (time && id) await saveTime(supabase, id, time);
   });
 }
 
@@ -53,8 +67,11 @@ export async function updateTodoTask(listId: string, taskId: string, edit: TodoT
     const title = edit.title.trim().slice(0, 255);
     if (!title) throw new Error("A task needs a title.");
     if (edit.due && !DATE.test(edit.due)) throw new Error("That due date is not valid.");
+    const time = edit.due && edit.time ? edit.time : null;
+    if (time && !TIME.test(time)) throw new Error("That time is not valid.");
     const { supabase, provider: p } = await provider();
     await updateTask(supabase, p, listId, taskId, { title, notes: edit.notes.slice(0, 8000), due: edit.due || null });
+    if (time || edit.time !== undefined) await saveTime(supabase, taskId, time);
   });
 }
 
