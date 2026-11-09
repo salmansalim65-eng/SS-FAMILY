@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { addTodoTask, createTodoList, setTodoTaskDone } from "@/app/todo/actions";
+import { toRomanUrdu } from "@/lib/roman-urdu";
 import { karachiToday, addDays } from "@/lib/time";
 import type { TodoList, TodoTask } from "@/lib/types";
+import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
 
 const REFRESH_MS = 5 * 60 * 1000;
 const OPEN_URL = { google: "https://tasks.google.com/", microsoft: "https://to-do.live.com/tasks/" } as const;
@@ -37,6 +39,18 @@ export function Todos() {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [pending, start] = useTransition();
   const input = useRef<HTMLInputElement>(null);
+
+  // 🎤 fills the new task's text, in the language picked for notes.
+  const voiceLang = useRef<DictationLang>(savedDictationLang());
+  const dictation = useDictation("en-US", (spoken) => {
+    const text = voiceLang.current.roman ? toRomanUrdu(spoken) : spoken;
+    setTitle((t) => (t.trim() ? `${t.trim()} ${text}` : text).slice(0, 255));
+  });
+  function toggleVoice() {
+    if (dictation.listening) return dictation.stop();
+    voiceLang.current = savedDictationLang();
+    dictation.start(voiceLang.current.speech);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +88,7 @@ export function Todos() {
 
   function add(e: React.FormEvent) {
     e.preventDefault();
+    if (dictation.listening) dictation.stop();
     if (!title.trim()) return;
     setError(null);
     start(async () => {
@@ -162,15 +177,37 @@ export function Todos() {
       ) : (
         <>
           <form onSubmit={add} className="mb-3 space-y-2">
-            <input
-              ref={input}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={255}
-              placeholder="+ Add a task"
-              aria-label="New task"
-              className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                ref={input}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={255}
+                placeholder={dictation.listening ? "Listening…" : "+ Add a task"}
+                aria-label="New task"
+                dir="auto"
+                className="w-full rounded-xl border border-line bg-surface py-2 pl-3 pr-10 text-sm outline-none focus:border-accent"
+              />
+              {dictation.supported && (
+                <button
+                  type="button"
+                  onClick={toggleVoice}
+                  aria-pressed={dictation.listening}
+                  aria-label={dictation.listening ? "Stop dictation" : "Speak the task"}
+                  title={dictation.listening ? "Stop" : "Speak the task (language as picked in Notes)"}
+                  className={`absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-lg text-sm ${
+                    dictation.listening ? "animate-pulse bg-red-500 text-white" : "hover:bg-surface-2"
+                  }`}
+                >
+                  🎤
+                </button>
+              )}
+            </div>
+            {dictation.error && (
+              <p className="rounded-lg bg-danger-soft px-2 py-1 text-[11px] leading-snug text-danger" role="alert">
+                {dictation.error}
+              </p>
+            )}
             {title.trim() && (
               <div className="flex flex-wrap items-center gap-2">
                 <input

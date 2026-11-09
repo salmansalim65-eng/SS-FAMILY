@@ -16,11 +16,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createNote, deleteNote, reorderNotes, updateNote, type NotePatch } from "@/app/notes/actions";
 import type { ChecklistItem, Note, NoteColor } from "@/lib/types";
 import { toRomanUrdu } from "@/lib/roman-urdu";
-import { DICTATION_LANGS, useDictation } from "./dictation";
+import { DICTATION_LANG_KEY as LANG_KEY, DICTATION_LANGS, useDictation } from "./dictation";
 import { Section } from "./section";
 
 const SAVE_DELAY_MS = 600;
-const LANG_KEY = "dashboard.dictationLang";
 
 const COLORS: { key: NoteColor; card: string; dot: string }[] = [
   { key: "yellow", card: "bg-amber-100 border-amber-200 dark:bg-amber-950/50 dark:border-amber-900", dot: "bg-amber-300" },
