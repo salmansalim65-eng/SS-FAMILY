@@ -52,3 +52,12 @@ body {
   color: var(--fg);
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Fingerprint lock (components/app-lock.tsx): hide the page until unlocked. */
+html.app-locked body * {
+  visibility: hidden;
+}
+html.app-locked #app-lock,
+html.app-locked #app-lock * {
+  visibility: visible;
+}
