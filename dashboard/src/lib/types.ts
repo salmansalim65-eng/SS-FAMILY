@@ -40,6 +40,21 @@ export type DashboardCard = {
 };
 
 /** What the browser gets back for one card. */
+/**
+ * Extra detail an rpc card may return next to value/previous, so a card can
+ * show what the project's own dashboard shows: a unit, Dr/Cr, sub-rows and a
+ * progress bar. Every field is optional.
+ */
+export type CardDetail = {
+  unit?: string; // "Rs", "AED", "SAR" — shown before amounts
+  style?: "full" | "lakh" | "compact"; // 1,234,567 | 12.35 lakh | 1.2M
+  suffix?: string; // after the main value, e.g. "Dr"
+  tone?: "up" | "down"; // colours the main value
+  rows?: { label: string; value: number | null; suffix?: string; tone?: "up" | "down"; plain?: boolean }[];
+  progress?: number; // 0–100
+  note?: string;
+};
+
 export type CardResult = {
   id: string;
   value: number | null;
@@ -47,6 +62,7 @@ export type CardResult = {
   isSample: boolean;
   error: string | null;
   updatedAt: string;
+  detail?: CardDetail;
 };
 
 export type Settings = {

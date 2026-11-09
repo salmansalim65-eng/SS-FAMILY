@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatValue, trend } from "@/lib/format";
+import { formatAmount, formatValue, trend } from "@/lib/format";
 import { TIME_ZONE } from "@/lib/time";
 import type { CardFormat, CardResult } from "@/lib/types";
 import { AppGlyph } from "./app-icon";
@@ -149,7 +149,15 @@ function KpiCard({
 }) {
   const error = result?.error ?? (result ? null : projectError);
   const change = result ? trend(result.value, result.previous) : null;
-  const display = result?.value == null ? "—" : formatValue(result.value, card.format, currency);
+  const detail = result?.detail;
+  const display =
+    result?.value == null
+      ? "—"
+      : detail?.unit || detail?.style || detail?.suffix
+        ? formatAmount(result.value, detail.style, detail.unit, detail.suffix)
+        : formatValue(result.value, card.format, currency);
+  const amount = (v: number | null, suffix?: string) =>
+    v == null ? "—" : formatAmount(v, detail?.style, detail?.unit, suffix);
   const good = change == null ? null : change === 0 ? null : change > 0 === card.higher_is_better;
 
   return (
@@ -173,12 +181,36 @@ function KpiCard({
         </div>
       ) : (
         <>
-          <p className={`mt-2 break-words font-semibold tabular-nums tracking-tight ${display.length > 11 ? "text-base sm:text-2xl" : "text-xl sm:text-3xl"}`}>
+          <p
+            className={`mt-2 break-words font-semibold tabular-nums tracking-tight ${display.length > 11 ? "text-base sm:text-2xl" : "text-xl sm:text-3xl"} ${
+              detail?.tone === "up" ? "text-up" : detail?.tone === "down" ? "text-down" : ""
+            }`}
+          >
             {display}
           </p>
+          {detail?.rows && detail.rows.length > 0 && (
+            <dl className="mt-2 space-y-1 text-xs">
+              {detail.rows.map((r, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-2">
+                  <dt className="truncate text-muted">{r.label}</dt>
+                  <dd
+                    className={`shrink-0 tabular-nums ${r.tone === "up" ? "text-up" : r.tone === "down" ? "text-down" : ""}`}
+                  >
+                    {r.plain ? (r.value == null ? "—" : formatAmount(r.value, "full", undefined, r.suffix)) : amount(r.value, r.suffix)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {detail?.progress != null && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-label={`${Math.round(detail.progress)}%`}>
+              <div className="h-full rounded-full bg-accent" style={{ width: `${detail.progress}%` }} />
+            </div>
+          )}
+          {detail?.note && <p className="mt-1.5 text-[11px] text-muted">{detail.note}</p>}
           <p className="mt-1 text-xs">
             {change == null ? (
-              <span className="text-muted">No comparison</span>
+              detail ? null : <span className="text-muted">No comparison</span>
             ) : (
               <span className={good == null ? "text-muted" : good ? "text-up" : "text-down"}>
                 {change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change).toFixed(1)}%
