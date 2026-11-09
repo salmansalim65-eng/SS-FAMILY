@@ -7,6 +7,7 @@ import { TIME_ZONE } from "@/lib/time";
 import { useRouter } from "next/navigation";
 import { requestDashboardRefresh } from "@/lib/refresh-event";
 import { SidebarToggle } from "./app-sidebar";
+import { InboxBell } from "./inbox";
 import { SplitScreens, type Screen } from "./split-screens";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -72,6 +73,7 @@ export function Header({
 
   const controls = (
     <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+      <InboxBell />
       <button type="button" onClick={refreshAll} aria-label="Refresh dashboard" title="Refresh everything" className={roundBtn}>
         <span aria-hidden className={spinning ? "animate-spin" : ""}>
           ↻
