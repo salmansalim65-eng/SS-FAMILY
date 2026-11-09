@@ -6,6 +6,7 @@ import { toRomanUrdu } from "@/lib/roman-urdu";
 import { karachiToday, addDays } from "@/lib/time";
 import type { NoteColor, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
+import { onDashboardRefresh } from "@/lib/refresh-event";
 
 const REFRESH_MS = 5 * 60 * 1000;
 const OPEN_URL = { google: "https://tasks.google.com/", microsoft: "https://to-do.live.com/tasks/" } as const;
@@ -83,7 +84,11 @@ export function Todos() {
   useEffect(() => {
     load();
     const t = setInterval(load, REFRESH_MS);
-    return () => clearInterval(t);
+    const off = onDashboardRefresh(load);
+    return () => {
+      clearInterval(t);
+      off();
+    };
   }, [load]);
 
   // Picking "+ New list…" asks for a name and makes the list in Google Tasks.

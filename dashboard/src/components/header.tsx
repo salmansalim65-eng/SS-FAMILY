@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { signOut } from "@/app/login/actions";
 import { TIME_ZONE } from "@/lib/time";
+import { useRouter } from "next/navigation";
+import { requestDashboardRefresh } from "@/lib/refresh-event";
 import { SplitScreens, type Screen } from "./split-screens";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -36,8 +38,23 @@ export function Header({
     return () => clearInterval(t);
   }, []);
 
+  const router = useRouter();
+  const [spinning, setSpinning] = useState(false);
+  // Reloads the panels in place and the server-rendered parts (icons, cards' setup).
+  function refreshAll() {
+    setSpinning(true);
+    requestDashboardRefresh();
+    router.refresh();
+    setTimeout(() => setSpinning(false), 1200);
+  }
+
   const controls = (
     <div className="flex items-center gap-1.5">
+      <button type="button" onClick={refreshAll} aria-label="Refresh dashboard" title="Refresh everything" className={roundBtn}>
+        <span aria-hidden className={spinning ? "animate-spin" : ""}>
+          ↻
+        </span>
+      </button>
       <div className="hidden items-center gap-1.5 lg:flex">
         <SplitScreens screen={screen} />
       </div>
