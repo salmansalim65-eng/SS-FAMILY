@@ -160,7 +160,11 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={notes.map((n) => n.id)} strategy={rectSortingStrategy}>
-            <ul className={`grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 ${column ? "lg:grid-cols-1" : "lg:grid-cols-4"}`}>
+            <ul
+              className={`grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 ${
+                column ? "max-h-[21rem] overflow-y-auto p-0.5 pr-1" : "lg:grid-cols-4"
+              }`}
+            >
               {notes.map((note) => (
                 <NoteCard
                   key={note.id}

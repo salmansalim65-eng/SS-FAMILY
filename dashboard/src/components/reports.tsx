@@ -99,20 +99,22 @@ export function Reports({
           return (
             <div
               key={project}
-              className="space-y-3 rounded-2xl border border-line bg-surface-2/50 p-3 sm:p-4"
+              className="space-y-2.5 rounded-2xl border border-line bg-surface-2/50 p-2.5 sm:p-3"
               style={{ borderTop: `3px solid ${accent}` }}
             >
               <h3 className="flex items-center gap-2.5 text-sm font-semibold">
                 {app ? <AppGlyph app={app} size="xs" /> : <span className="size-2.5 rounded-full" style={{ background: accent }} />}
                 <span className="truncate">{app?.name ?? project}</span>
                 {ps?.loading && <span aria-hidden className="animate-spin text-xs text-muted">↻</span>}
+                {updatedAt(ps) && <span className="text-[11px] font-normal text-muted">Updated {updatedAt(ps)}</span>}
                 {app && (
                   <a href={app.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs font-normal text-muted hover:text-fg">
                     Open ↗
                   </a>
                 )}
               </h3>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+              {/* Small cards, as many to a row as fit (six on a laptop), so a project takes one or two rows. */}
+              <div className="grid grid-cols-2 gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))]">
                 {cards
                   .filter((c) => c.project === project)
                   .map((card) => (
@@ -132,6 +134,11 @@ export function Reports({
       </div>
     </Section>
   );
+}
+
+function updatedAt(ps: ProjectState | undefined) {
+  const first = ps && Object.values(ps.results)[0];
+  return first ? timeFmt.format(new Date(first.updatedAt)) : null;
 }
 
 function KpiCard({
@@ -161,35 +168,35 @@ function KpiCard({
   const good = change == null ? null : change === 0 ? null : change > 0 === card.higher_is_better;
 
   return (
-    <article className="flex min-h-32 min-w-0 flex-col rounded-2xl border border-line bg-surface p-3 shadow-sm sm:min-h-36 sm:p-4">
+    <article className="flex min-w-0 flex-col rounded-xl border border-line bg-surface p-2.5 shadow-sm sm:p-3" title={card.title}>
       <div className="flex items-start justify-between gap-2">
-        <h4 className="text-xs text-muted sm:text-sm">{card.title}</h4>
+        <h4 className="line-clamp-2 text-xs font-medium leading-tight text-muted">{card.title}</h4>
         {result?.isSample && (
           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">Sample</span>
         )}
       </div>
 
       {loading ? (
-        <div className="mt-3 space-y-2" aria-label="Loading">
-          <div className="h-8 w-2/3 animate-pulse rounded-lg bg-surface-2" />
+        <div className="mt-2 space-y-2" aria-label="Loading">
+          <div className="h-6 w-2/3 animate-pulse rounded-lg bg-surface-2" />
           <div className="h-3 w-1/2 animate-pulse rounded bg-surface-2" />
         </div>
       ) : error ? (
-        <div className="mt-3 rounded-xl bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">
+        <div className="mt-2 rounded-lg bg-danger-soft px-2 py-1.5 text-xs text-danger" role="alert">
           <p className="font-medium">Couldn’t load</p>
           <p className="mt-0.5 line-clamp-3 break-words opacity-90">{error}</p>
         </div>
       ) : (
         <>
           <p
-            className={`mt-2 break-words font-semibold tabular-nums tracking-tight ${display.length > 11 ? "text-base sm:text-2xl" : "text-xl sm:text-3xl"} ${
+            className={`mt-1 truncate font-semibold tabular-nums tracking-tight ${display.length > 14 ? "text-base" : "text-lg sm:text-xl"} ${
               detail?.tone === "up" ? "text-up" : detail?.tone === "down" ? "text-down" : ""
             }`}
           >
             {display}
           </p>
           {detail?.rows && detail.rows.length > 0 && (
-            <dl className="mt-2 space-y-1 text-xs">
+            <dl className="mt-1.5 space-y-0.5 text-[11px] leading-snug">
               {detail.rows.map((r, i) => (
                 <div key={i} className="flex items-baseline justify-between gap-2">
                   <dt className="truncate text-muted">{r.label}</dt>
@@ -203,27 +210,21 @@ function KpiCard({
             </dl>
           )}
           {detail?.progress != null && (
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-label={`${Math.round(detail.progress)}%`}>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2" aria-label={`${Math.round(detail.progress)}%`}>
               <div className="h-full rounded-full bg-accent" style={{ width: `${detail.progress}%` }} />
             </div>
           )}
-          {detail?.note && <p className="mt-1.5 text-[11px] text-muted">{detail.note}</p>}
-          <p className="mt-1 text-xs">
-            {change == null ? (
-              detail ? null : <span className="text-muted">No comparison</span>
-            ) : (
+          {detail?.note && <p className="mt-1 truncate text-[10px] text-muted">{detail.note}</p>}
+          {change != null && (
+            <p className="mt-1 text-[11px]">
               <span className={good == null ? "text-muted" : good ? "text-up" : "text-down"}>
                 {change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change).toFixed(1)}%
-                <span className="text-muted"> vs last mo<span className="hidden sm:inline">nth</span></span>
+                <span className="text-muted"> vs last month</span>
               </span>
-            )}
-          </p>
+            </p>
+          )}
         </>
       )}
-
-      <p className="mt-auto pt-3 text-[11px] text-muted">
-        {result ? `Updated ${timeFmt.format(new Date(result.updatedAt))}` : " "}
-      </p>
     </article>
   );
 }
