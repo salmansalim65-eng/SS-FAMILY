@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, importTodoTasks, moveTodoTask, setTodoListOrder, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
+import { addTodoTask, createTodoList, deleteTodoList, deleteTodoTask, moveTodoTask, setTodoListOrder, setTodoListColor, setTodoTaskColor, setTodoTaskDone, updateTodoTask } from "@/app/todo/actions";
 import { toRomanUrdu } from "@/lib/roman-urdu";
-import { IMPORT_MAX_TASKS, importCount, parseTaskImport } from "@/lib/task-import";
 import { karachiToday, addDays } from "@/lib/time";
 import type { ListColor, NoteColor, TodoList, TodoTask } from "@/lib/types";
 import { savedDictationLang, useDictation, type DictationLang } from "./dictation";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 
 const REFRESH_MS = 5 * 60 * 1000;
+const FOLDED_KEY = "dashboard.foldedLists";
 const OPEN_URL = { google: "https://tasks.google.com/", microsoft: "https://to-do.live.com/tasks/" } as const;
 
 // The same colours as sticky notes.
@@ -145,7 +145,19 @@ export function Todos() {
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [detail, setDetail] = useState<TodoTask | null>(null);
   const [board, setBoard] = useState(false);
-  const [importing, setImporting] = useState(false);
+  // Lists folded in the panel, remembered in this browser.
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      setFolded(new Set(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]")));
+    } catch {}
+  }, []);
+  const saveFolded = (next: Set<string>) => {
+    setFolded(next);
+    try {
+      localStorage.setItem(FOLDED_KEY, JSON.stringify([...next]));
+    } catch {}
+  };
   const [pending, start] = useTransition();
 
   const load = useCallback(async () => {
@@ -280,6 +292,13 @@ export function Todos() {
         onColor={(c) => paintList(list.id, c)}
         onDelete={ready!.provider === "google" && !list.isDefault ? () => removeList(list) : undefined}
         onMove={(dir) => moveList(i, dir)}
+        folded={layout === "stack" && folded.has(list.id)}
+        onFold={() => {
+          const next = new Set(folded);
+          if (next.has(list.id)) next.delete(list.id);
+          else next.add(list.id);
+          saveFolded(next);
+        }}
         canUp={i > 0}
         canDown={i < ready!.lists.length - 1}
         list={list}
@@ -299,9 +318,14 @@ export function Todos() {
           + List
         </button>
       )}
-      {ready?.provider === "google" && (
-        <button type="button" onClick={() => setImporting(true)} className="text-muted hover:text-fg" title="Paste many tasks at once">
-          ⇪ Import
+      {ready && !inBoard && ready.lists.length > 1 && (
+        <button
+          type="button"
+          onClick={() => saveFolded(ready.lists.every((l) => folded.has(l.id)) ? new Set() : new Set(ready.lists.map((l) => l.id)))}
+          className="text-muted hover:text-fg"
+          title={ready.lists.every((l) => folded.has(l.id)) ? "Open every list" : "Fold every list to its heading"}
+        >
+          {ready.lists.every((l) => folded.has(l.id)) ? "⊞ Expand" : "⊟ Collapse"}
         </button>
       )}
       <button type="button" onClick={load} className="text-muted hover:text-fg" aria-label="Refresh tasks">
@@ -394,14 +418,6 @@ export function Todos() {
             </div>
           )}
 
-          {importing && (
-            <ImportDialog
-              lists={state.lists.map((l) => l.name)}
-              onClose={() => setImporting(false)}
-              onDone={load}
-            />
-          )}
-
           {detail && (
             <TaskDetail
               task={detail}
@@ -464,7 +480,11 @@ function ListSection({
   onMove,
   canUp,
   canDown,
+  folded,
+  onFold,
 }: {
+  folded: boolean;
+  onFold: () => void;
   color: (typeof LIST_COLORS)[number];
   onColor: (c: ListColor | null) => void;
   onDelete?: () => void;
@@ -481,7 +501,6 @@ function ListSection({
   onAdd: (listId: string, title: string, due: string | null, time: string | null, remind: number | null) => Promise<string | null>;
 }) {
   const [showCompleted, setShowCompleted] = useState(false);
-  const [folded, setFolded] = useState(false);
   const [picking, setPicking] = useState(false);
   const open = tasks.filter((t) => !isDone(t));
   const finished = tasks.filter((t) => isDone(t));
@@ -498,7 +517,7 @@ function ListSection({
       <div className={`flex items-center gap-1 ${color.band} ${board ? "px-4 py-2" : "px-2.5 py-1"}`}>
         <button
           type="button"
-          onClick={() => !board && setFolded((f) => !f)}
+          onClick={() => !board && onFold()}
           aria-expanded={board ? undefined : !folded}
           className={`flex min-w-0 flex-1 items-center gap-2 text-left font-semibold ${board ? "cursor-default text-lg" : "text-sm"}`}
         >
@@ -998,102 +1017,5 @@ function ReminderSelect({ value, onChange, small }: { value: number | null; onCh
         </option>
       ))}
     </select>
-  );
-}
-
-/** Paste many tasks at once: "# List" lines name the list (made when missing), every other line is a task. */
-function ImportDialog({ lists, onClose, onDone }: { lists: string[]; onClose: () => void; onDone: () => Promise<void> }) {
-  const [text, setText] = useState("");
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !pending && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, pending]);
-
-  const groups = parseTaskImport(text);
-  const count = importCount(groups);
-  const known = new Set(lists.map((l) => l.trim().toLowerCase()));
-  const newLists = groups.filter((g) => g.list && !known.has(g.list.trim().toLowerCase())).map((g) => g.list!);
-
-  function run() {
-    setError(null);
-    start(async () => {
-      const res = await importTodoTasks(text);
-      if (!res.ok) return setError(res.error);
-      const made = res.data?.createdLists ?? [];
-      setResult(`${res.data?.added ?? 0} tasks added${made.length ? ` · new lists: ${made.join(", ")}` : ""}.`);
-      setText("");
-      await onDone();
-    });
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && !pending && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Import tasks" className="w-full max-w-lg space-y-3 rounded-2xl border border-line bg-surface p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-semibold">⇪ Import tasks</h3>
-          <button type="button" onClick={onClose} disabled={pending} className="text-muted hover:text-fg" aria-label="Close">
-            ✕
-          </button>
-        </div>
-        <p className="text-xs text-muted">
-          One task per line. A line starting with <b>#</b> is a list name — made in Google Tasks if it isn’t there yet. Bullets and check
-          boxes are dropped.
-        </p>
-        <textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setResult(null);
-          }}
-          rows={12}
-          dir="auto"
-          autoFocus
-          placeholder={"# ERP\nSupplier payments check\nStock report bhejna\n# DUBAI\nRent voucher upload"}
-          aria-label="Tasks to import"
-          className="w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-        />
-        {count > 0 && (
-          <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs">
-            <p className="font-medium">
-              {count} task{count === 1 ? "" : "s"} →{" "}
-              {groups
-                .filter((g) => g.titles.length)
-                .map((g) => `${g.list ?? lists[0] ?? "default list"} (${g.titles.length})`)
-                .join(", ")}
-            </p>
-            {newLists.length > 0 && <p className="mt-0.5 text-muted">New lists to make: {newLists.join(", ")}</p>}
-            {count > IMPORT_MAX_TASKS && <p className="mt-0.5 text-danger">Up to {IMPORT_MAX_TASKS} at a time.</p>}
-          </div>
-        )}
-        {error && (
-          <p className="rounded-lg bg-danger-soft px-2 py-1 text-xs text-danger" role="alert">
-            {error}
-          </p>
-        )}
-        {result && (
-          <p className="rounded-lg bg-emerald-50 px-2 py-1 text-xs text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200" role="status">
-            ✓ {result}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={pending} className="rounded-xl px-3 py-2 text-sm text-muted hover:text-fg">
-            {result ? "Close" : "Cancel"}
-          </button>
-          <button
-            type="button"
-            onClick={run}
-            disabled={pending || count === 0 || count > IMPORT_MAX_TASKS}
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-          >
-            {pending ? `Adding ${count}…` : `Import ${count || ""}`.trim()}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
