@@ -62,9 +62,9 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [ticking, setTicking] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (now = false) => {
     try {
-      const res = await fetch("/api/sstasks", { cache: "no-store" });
+      const res = await fetch(now ? "/api/sstasks?sync=now" : "/api/sstasks", { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Could not load SS Tasks");
       setState({ status: "ready", tasks: body.tasks });
@@ -78,8 +78,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       if (localStorage.getItem(TAB_KEY) === "by_me") setTab("by_me");
     } catch {}
     load();
-    const t = setInterval(load, REFRESH_MS);
-    const off = onDashboardRefresh(load);
+    const t = setInterval(() => load(), REFRESH_MS);
+    const off = onDashboardRefresh(() => load(true));
     const onFocus = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", onFocus);
     return () => {
@@ -102,6 +102,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     const res = await tickSsTask(task.id, true);
     if (res.ok) {
       setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.filter((x) => x.id !== task.id) } : s));
+      load(true); // ticks it in Google Tasks too
     } else {
       setError(res.error);
     }
