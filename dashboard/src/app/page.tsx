@@ -42,7 +42,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <SidebarLayout groups={[projects, personal]}>
-      <main className="mx-auto max-w-7xl space-y-6 px-4 pb-10 sm:px-6">
+      <main className="w-full space-y-6 px-4 pb-10 sm:px-6">
         <Header screen={screen} />
 
         {/* The day at a glance: this week's schedule, to-do and notes side by side. */}
