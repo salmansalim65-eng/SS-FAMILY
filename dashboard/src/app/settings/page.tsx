@@ -47,7 +47,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <GoogleCalendarSettings connection={google} result={params.google} />
       </SettingsBlock>
 
-      <SettingsBlock id="todo" title="Microsoft To Do" hint="Shows your open tasks on the dashboard; add and tick them off there.">
+      <SettingsBlock id="todo" title="Microsoft" hint="OneDrive files and OneNote pages in the Files &amp; Notes panel (read only), and Microsoft To Do.">
         <MicrosoftTodoSettings connection={microsoft} result={params.microsoft} />
       </SettingsBlock>
 
