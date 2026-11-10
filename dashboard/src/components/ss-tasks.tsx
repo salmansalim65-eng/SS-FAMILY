@@ -61,6 +61,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [tab, setTab] = useState<Tab>("mine");
   const [ticking, setTicking] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const load = useCallback(async (now = false) => {
     try {
@@ -68,6 +69,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Could not load SS Tasks");
       setState({ status: "ready", tasks: body.tasks });
+      // Google Tasks sync: keep showing the last problem until a pass runs clean.
+      const sync = body.sync as { ran?: boolean; error?: string; errors?: string[] } | null;
+      if (sync?.error) setSyncError(sync.error);
+      else if (sync?.ran) setSyncError(sync.errors?.[0] ?? null);
     } catch (e) {
       setState((s) => (s.status === "ready" ? s : { status: "error", message: e instanceof Error ? e.message : "Could not load" }));
     }
@@ -162,6 +167,11 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         ))}
       </div>
 
+      {syncError && (
+        <p className="mb-2 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200" title={syncError}>
+          Google Tasks sync: {syncError}
+        </p>
+      )}
       {error && (
         <p className="mb-2 text-sm text-danger" role="alert">
           {error}
