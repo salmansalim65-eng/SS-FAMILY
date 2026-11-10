@@ -1,6 +1,7 @@
 import { SidebarLayout } from "@/components/app-sidebar";
 import { CalendarEmbed } from "@/components/calendar-embed";
 import { CalendarEvents } from "@/components/calendar-events";
+import { FilesNotes } from "@/components/files-notes";
 import { Header } from "@/components/header";
 import { Notes } from "@/components/notes";
 import { Reports, type CardMeta, type ProjectApp } from "@/components/reports";
@@ -59,6 +60,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
             </div>
           </div>
         )}
+
+        {/* OneDrive files and OneNote pages, read only. */}
+        {screen !== "projects" && <FilesNotes />}
 
         {screen !== "day" && (
           <Reports

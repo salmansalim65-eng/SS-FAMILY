@@ -15,7 +15,8 @@ const MAX_LISTS = 10;
 /** Cookie holding the OAuth state between /api/microsoft/connect and the callback. */
 export const MICROSOFT_STATE_COOKIE = "microsoft_oauth_state";
 
-export const MICROSOFT_SCOPES = ["openid", "email", "offline_access", "User.Read", "Tasks.ReadWrite"];
+// Files.Read / Notes.Read: the Files & Notes panel (OneDrive and OneNote, read only).
+export const MICROSOFT_SCOPES = ["openid", "email", "offline_access", "User.Read", "Tasks.ReadWrite", "Files.Read", "Notes.Read"];
 
 /** Thrown when Microsoft no longer accepts the stored grant; the user must reconnect. */
 export class MicrosoftNotConnected extends Error {}
@@ -112,14 +113,14 @@ export async function disconnectMicrosoft(db: SupabaseClient) {
 }
 
 /** A valid access token, refreshed (and re-stored) when the cached one is about to expire. */
-async function accessToken(db: SupabaseClient): Promise<string> {
+export async function accessToken(db: SupabaseClient): Promise<string> {
   const { data, error } = await db
     .from("dashboard_oauth_tokens")
     .select("refresh_token_enc, access_token_enc, access_expires_at")
     .eq("provider", "microsoft")
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) throw new MicrosoftNotConnected("Microsoft To Do is not connected");
+  if (!data) throw new MicrosoftNotConnected("Microsoft is not connected");
 
   if (data.access_token_enc && data.access_expires_at && new Date(data.access_expires_at).getTime() - Date.now() > 60_000) {
     return decrypt(data.access_token_enc);

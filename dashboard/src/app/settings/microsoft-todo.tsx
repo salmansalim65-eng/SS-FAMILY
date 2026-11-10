@@ -4,7 +4,7 @@ import { disconnectMicrosoftTodo } from "./actions";
 import { Status, dangerBtn, primaryBtn, useAction } from "./ui";
 
 const RESULTS: Record<string, { ok: boolean; text: string }> = {
-  connected: { ok: true, text: "Microsoft To Do connected." },
+  connected: { ok: true, text: "Microsoft connected (To Do, OneDrive and OneNote)." },
   denied: { ok: false, text: "Microsoft access was not granted." },
   state_mismatch: { ok: false, text: "The sign-in expired or came from another tab. Try connecting again." },
   no_code: { ok: false, text: "Microsoft did not send a sign-in code. Try again." },
@@ -38,7 +38,7 @@ export function MicrosoftTodoSettings({
               type="button"
               className={dangerBtn}
               disabled={disconnect.pending}
-              onClick={() => confirm("Disconnect Microsoft To Do?") && disconnect.exec(disconnectMicrosoftTodo)}
+              onClick={() => confirm("Disconnect Microsoft?") && disconnect.exec(disconnectMicrosoftTodo)}
             >
               Disconnect
             </button>
@@ -47,7 +47,7 @@ export function MicrosoftTodoSettings({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">Not connected.</p>
-          <a href="/api/microsoft/connect" className={primaryBtn}>Connect Microsoft To Do</a>
+          <a href="/api/microsoft/connect" className={primaryBtn}>Connect Microsoft</a>
         </div>
       )}
       <Status error={disconnect.error} />
