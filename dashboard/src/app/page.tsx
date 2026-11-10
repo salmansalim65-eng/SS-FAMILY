@@ -4,8 +4,9 @@ import { CalendarEvents } from "@/components/calendar-events";
 import { Header } from "@/components/header";
 import { Notes } from "@/components/notes";
 import { Reports, type CardMeta, type ProjectApp } from "@/components/reports";
-import { Todos } from "@/components/todos";
+import { SsTasks } from "@/components/ss-tasks";
 import { getApps, getCards, getNotes, getSettings } from "@/lib/data";
+import { SSTASKS_URL } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
               slim
               fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
             />
-            <Todos />
+            <SsTasks appUrl={SSTASKS_URL} />
             <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm md:col-span-2 xl:col-span-1">
               <Notes initial={notes} column />
             </div>
