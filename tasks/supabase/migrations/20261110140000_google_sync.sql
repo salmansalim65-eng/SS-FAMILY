@@ -100,7 +100,7 @@ begin
   select workspace_id into v_ws from public.google_sync_settings;
   if v_ws is null or not exists (select 1 from public.workspaces where id = v_ws) then
     insert into public.workspaces (name, color, created_by) values ('Personal', '#22c55e', v_me) returning id into v_ws;
-    update public.google_sync_settings set workspace_id = v_ws;
+    update public.google_sync_settings set workspace_id = v_ws where id;
   end if;
   insert into public.projects (workspace_id, name, color, created_by)
   values (v_ws, left(coalesce(nullif(trim(p_title), ''), 'Tasks'), 120),
@@ -165,7 +165,7 @@ begin
         if v_project is null or not exists (select 1 from public.projects where id = v_project) then
           v_project := public.sync_personal_project('Inbox');
         end if;
-        update public.google_sync_settings set inbox_list = v_op->>'google_list', inbox_project = v_project;
+        update public.google_sync_settings set inbox_list = v_op->>'google_list', inbox_project = v_project where id;
         insert into public.google_sync_lists (google_list, project_id) values (v_op->>'google_list', v_project)
         on conflict (google_list) do update set project_id = excluded.project_id;
         v_id := v_project;
