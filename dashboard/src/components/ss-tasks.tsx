@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
+import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, removeProject, removeTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 
@@ -301,6 +301,45 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   }
 
   /** Changes a task at once on screen, then in Task Hub; reloads either way. */
+  async function deleteTask(task: Task) {
+    if (!confirm(`Delete "${task.title}"? This cannot be undone.`)) return;
+    setMenu(null);
+    setError(null);
+    setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.filter((t) => t.id !== task.id) } : s));
+    const res = await removeTask(task.id);
+    if (!res.ok) setError(res.error);
+    load(true);
+  }
+
+  async function deleteProject(g: Group) {
+    const n = g.tasks.length;
+    const typed = prompt(
+      `Delete the project "${g.label}"${g.sub ? ` (${g.sub})` : ""} for good?\n\nIt and all its tasks are deleted for everyone${n ? ` (${n} open task${n === 1 ? "" : "s"} here)` : ""}. This cannot be undone.\n\nType the project name to confirm:`,
+    );
+    if (typed === null) return;
+    if (typed.trim() !== g.label.trim()) return setError("The name didn't match, so nothing was deleted.");
+    setError(null);
+    const res = await removeProject(g.key);
+    if (!res.ok) setError(res.error);
+    load(true);
+  }
+
+  const delProjectBtn = (g: Group) =>
+    prefs.groupBy === "project" ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          deleteProject(g);
+        }}
+        title={`Delete project ${g.label}`}
+        aria-label={`Delete project ${g.label}`}
+        className="rounded px-1 text-xs text-muted hover:bg-surface/80 hover:text-danger"
+      >
+        🗑
+      </button>
+    ) : null;
+
   async function edit(task: Task, patch: Patch) {
     setError(null);
     const p = patch.project ? projects.find((x) => x.id === patch.project) : undefined;
@@ -496,7 +535,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             setMenu((m) => (m?.id === t.id ? null : { id: t.id, rect }));
           }}
           aria-label="Task options"
-          title="Assign, move to project, due date, priority, progress"
+          title="Assign, move to project, due date, priority, progress, delete"
           className={`shrink-0 rounded-md border border-line bg-surface px-1.5 text-base font-bold leading-6 text-fg shadow-sm hover:border-accent hover:text-accent ${menu?.id === t.id ? "border-accent text-accent" : ""}`}
         >
           ⋯
@@ -512,6 +551,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
               onAssigned={() => load(true)}
               appUrl={appUrl}
             onClose={() => setMenu(null)}
+            onDelete={() => deleteTask(t)}
             openHref={href(t)}
           />
         )}
@@ -724,12 +764,12 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             const late = lateCount(g.tasks);
             return (
               <div key={g.key} {...dropProps(g)} className={`overflow-hidden rounded-xl border border-line/70 transition ${dropRing(g)}`}>
+                <div className="flex items-center pr-2" style={{ backgroundColor: tint(g.color, 14), borderLeft: `4px solid ${g.color}` }}>
                 <button
                   type="button"
                   onClick={() => toggleFold(g.key)}
                   aria-expanded={!folded}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left"
-                  style={{ backgroundColor: tint(g.color, 14), borderLeft: `4px solid ${g.color}` }}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
                 >
                   <span className="text-xs text-muted">{folded ? "▸" : "▾"}</span>
                   <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
@@ -739,6 +779,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     <span className="rounded-full bg-surface/80 px-1.5 text-muted">{g.tasks.length}</span>
                   </span>
                 </button>
+                {delProjectBtn(g)}
+                </div>
                 {!folded &&
                   (g.tasks.length ? (
                     <ul className="divide-y divide-line/50">
@@ -784,6 +826,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
                   {lateCount(g.tasks) > 0 && <span className="rounded-full bg-red-600 px-1.5 text-xs text-white">{lateCount(g.tasks)}</span>}
                   <span className="ml-auto rounded-full bg-surface/80 px-1.5 text-xs text-muted">{g.tasks.length}</span>
+                  {delProjectBtn(g)}
                 </div>
                 {g.sub && (
                   <p className="-mt-1 px-3 pb-1 text-[11px] text-muted" style={{ backgroundColor: tint(g.color, 10) }}>
@@ -887,6 +930,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
               onAssigned={() => load(true)}
               appUrl={appUrl}
               onClose={() => setMenu(null)}
+              onDelete={() => deleteTask(t)}
               openHref={href(t)}
             />
           )}
@@ -1098,6 +1142,7 @@ function TaskMenu({
   onAssigned,
   appUrl,
   onClose,
+  onDelete,
   openHref,
 }: {
   anchor: DOMRect;
@@ -1109,6 +1154,7 @@ function TaskMenu({
   onAssigned: () => void;
   appUrl: string;
   onClose: () => void;
+  onDelete: () => void;
   openHref: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -1128,8 +1174,13 @@ function TaskMenu({
   }, [onClose]);
   const W = 264;
   const left = Math.max(8, Math.min(anchor.right - W, window.innerWidth - W - 8));
-  const below = window.innerHeight - anchor.bottom > 430 || anchor.top < 430;
-  const pos: React.CSSProperties = below ? { left, top: anchor.bottom + 4 } : { left, bottom: window.innerHeight - anchor.top + 4 };
+  // Open on the side with more room, and never taller than that room, so nothing is cut off.
+  const roomBelow = window.innerHeight - anchor.bottom - 12;
+  const roomAbove = anchor.top - 12;
+  const below = roomBelow >= 430 || roomBelow >= roomAbove;
+  const pos: React.CSSProperties = below
+    ? { left, top: anchor.bottom + 4, maxHeight: Math.max(220, roomBelow) }
+    : { left, bottom: window.innerHeight - anchor.top + 4, maxHeight: Math.max(220, roomAbove) };
   const workspaces = [...new Set(projects.map((p) => p.workspace))];
   const people = projects.find((p) => p.id === task.project_id)?.people ?? [];
   const quick = "rounded-full border border-line px-2 py-0.5 text-xs hover:bg-surface-2";
@@ -1137,7 +1188,7 @@ function TaskMenu({
   const progress = (task.bucket ?? "To do").toLowerCase();
 
   return (
-    <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-[70] max-h-[85vh] w-[264px] space-y-3 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
+    <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-[70] w-[264px] space-y-3 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
       <div className="space-y-1.5">
         <p className={label}>Assigned to</p>
         {people.length > 0 && (
@@ -1170,6 +1221,25 @@ function TaskMenu({
         )}
         <AssignByEmail taskId={task.id} appUrl={appUrl} onAssigned={onAssigned} />
       </div>
+      {projects.length > 0 && (
+        <div className="space-y-1.5">
+          <p className={label}>Move to project</p>
+          <select value={task.project_id} onChange={(e) => onEdit({ project: e.target.value })} className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-sm" aria-label="Project">
+            {!projects.some((p) => p.id === task.project_id) && <option value={task.project_id}>{task.project}</option>}
+            {workspaces.map((w) => (
+              <optgroup key={w} label={w}>
+                {projects
+                  .filter((p) => p.workspace === w)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="space-y-1.5">
         <p className={label}>Due date</p>
         <div className="flex flex-wrap gap-1">
@@ -1221,25 +1291,13 @@ function TaskMenu({
           ))}
         </div>
       </div>
-      {projects.length > 0 && (
-        <div className="space-y-1.5">
-          <p className={label}>Move to project</p>
-          <select value={task.project_id} onChange={(e) => onEdit({ project: e.target.value })} className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-sm" aria-label="Project">
-            {!projects.some((p) => p.id === task.project_id) && <option value={task.project_id}>{task.project}</option>}
-            {workspaces.map((w) => (
-              <optgroup key={w} label={w}>
-                {projects
-                  .filter((p) => p.workspace === w)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="w-full rounded-lg border border-danger/40 px-2 py-1.5 text-sm text-danger hover:bg-danger-soft"
+      >
+        🗑 Delete task
+      </button>
       <div className="flex justify-between border-t border-line pt-2 text-xs">
         <a href={openHref} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
           Open in Task Hub ↗

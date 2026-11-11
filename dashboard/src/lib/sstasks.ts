@@ -82,6 +82,22 @@ export async function updateSsTask(id: string, patch: SsTaskPatch) {
   if (error) throw new Error(error.message);
 }
 
+/** Deletes a task for good, as SS. */
+export async function deleteSsTask(id: string) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_delete", { p_key: dashboardKey(), p_task: id })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}
+
+/** Deletes a project and all its tasks, as SS (Google Tasks lists are refused). */
+export async function deleteSsProject(id: string) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_delete", { p_key: dashboardKey(), p_project: id })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}
+
 /** Gives a task to someone on its project, or takes it back, as SS. */
 export async function assignSsTask(id: string, user: string, on: boolean) {
   const { error } = await projectClient("SSTASKS")
