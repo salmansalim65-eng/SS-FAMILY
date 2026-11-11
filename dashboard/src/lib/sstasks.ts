@@ -82,6 +82,48 @@ export async function updateSsTask(id: string, patch: SsTaskPatch) {
   if (error) throw new Error(error.message);
 }
 
+export type SsTaskDetail = {
+  id: string;
+  title: string;
+  notes: string;
+  start: string | null;
+  due: string | null;
+  priority: string | null;
+  done: boolean;
+  project_id: string;
+  bucket_id: string | null;
+  buckets: { id: string; name: string }[];
+  people: { id: string; name: string; email: string }[];
+  assignee_ids: string[];
+  checklist: { id: string; title: string; done: boolean }[];
+  comments: { id: string; body: string; created_at: string; mine: boolean; name: string }[];
+  attachments?: { id: string; name: string; size: number | null; created_at: string }[];
+  can_delete: boolean;
+};
+export type SsTaskOp =
+  | { op: "set"; title?: string; notes?: string; start?: string; due?: string; priority?: string; bucket?: string; done?: boolean }
+  | { op: "check_add"; title: string }
+  | { op: "check_toggle"; id: string }
+  | { op: "check_delete"; id: string }
+  | { op: "comment"; body: string };
+
+/** Everything the task panel shows, as SS. */
+export async function getSsTaskDetail(id: string): Promise<SsTaskDetail> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_detail", { p_key: dashboardKey(), p_task: id })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as SsTaskDetail;
+}
+
+/** One change from the task panel (fields, checklist, comment), as SS. */
+export async function applySsTask(id: string, op: SsTaskOp) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_apply", { p_key: dashboardKey(), p_task: id, p_op: op })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}
+
 /** Deletes a task for good, as SS. */
 export async function deleteSsTask(id: string) {
   const { error } = await projectClient("SSTASKS")

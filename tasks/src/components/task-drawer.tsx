@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ago } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 import { PRIORITIES, type Bucket, type ChecklistItem, type Comment, type Priority, type Profile, type Task } from "@/lib/types";
+import { Attachments } from "./attachments";
 import { Avatar, useAppData } from "./data";
 
 const field = "w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent";
@@ -282,6 +283,16 @@ export function TaskDrawer({
                 </button>
               </div>
             </div>
+
+            <Attachments
+              taskId={task.id}
+              myId={me?.id ?? null}
+              canRemoveAll={(() => {
+                const ws = projects.find((p) => p.id === task.project_id)?.workspace_id;
+                const role = workspaces.find((w) => w.id === ws)?.role;
+                return role === "owner" || role === "admin";
+              })()}
+            />
 
             <div className="space-y-2">
               <p className="text-sm font-medium">💬 Comments</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TaskPanel } from "@/components/task-panel";
 import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, removeProject, removeTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
@@ -119,6 +120,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [moreDay, setMoreDay] = useState<string | null>(null);
   const [addDay, setAddDay] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const [openTask, setOpenTask] = useState<string | null>(null); // the task panel
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -301,14 +303,15 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   }
 
   /** Changes a task at once on screen, then in Task Hub; reloads either way. */
-  async function deleteTask(task: Task) {
-    if (!confirm(`Delete "${task.title}"? This cannot be undone.`)) return;
+  async function deleteTask(task: Task): Promise<boolean> {
+    if (!confirm(`Delete "${task.title}"? This cannot be undone.`)) return false;
     setMenu(null);
     setError(null);
     setState((s) => (s.status === "ready" ? { ...s, tasks: s.tasks.filter((t) => t.id !== task.id) } : s));
     const res = await removeTask(task.id);
     if (!res.ok) setError(res.error);
     load(true);
+    return res.ok;
   }
 
   async function deleteProject(g: Group) {
@@ -525,10 +528,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         } ${dragId === t.id ? "opacity-40" : ""} ${busy.has(t.id) ? "animate-pulse" : ""}`}
       >
         {tickBtn(t)}
-        <a href={href(t)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1" draggable={false}>
+        <button type="button" onClick={() => setOpenTask(t.id)} className="min-w-0 flex-1 text-left" draggable={false} title="Open task">
           <span className={`${card ? "line-clamp-2" : "block truncate"} text-sm font-medium`}>{t.title}</span>
           {chips(t, card)}
-        </a>
+        </button>
         <button
           type="button"
           onClick={(e) => {
@@ -667,6 +670,28 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         />
       )}
       {panel === "share" && <ShareProject projects={projects} appUrl={appUrl} onChanged={() => load(true)} />}
+      {openTask &&
+        (() => {
+          const t = tasks.find((x) => x.id === openTask);
+          return (
+            <TaskPanel
+              taskId={openTask}
+              projects={projects}
+              openHref={t ? href(t) : appUrl}
+              onClose={() => setOpenTask(null)}
+              onChanged={() => load(true)}
+              onMove={async (projectId) => {
+                if (t) await edit(t, { project: projectId });
+              }}
+              onAssign={async (person, on) => {
+                if (t) await assign(t, person, on);
+              }}
+              onDelete={async () => {
+                if (t && (await deleteTask(t))) setOpenTask(null);
+              }}
+            />
+          );
+        })()}
       {adding && (
         <AddTask
           projects={projects}
@@ -782,6 +807,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                 </button>
                 {delProjectBtn(g)}
                 </div>
+                {!folded && canAdd(g) && <InlineAdd always onAdd={(title) => quickAdd(g, title)} />}
                 {!folded &&
                   (g.tasks.length ? (
                     <ul className="divide-y divide-line/50">
@@ -794,7 +820,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   ) : (
                     <p className="px-3 py-2 text-xs text-muted">{dragId ? "Drop here" : "No tasks"}</p>
                   ))}
-                {!folded && canAdd(g) && <InlineAdd onAdd={(title) => quickAdd(g, title)} />}
+
               </div>
             );
           })}
@@ -834,6 +860,11 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     {g.sub}
                   </p>
                 )}
+                {canAdd(g) && (
+                  <div className="pt-2">
+                    <InlineAdd card always onAdd={(title) => quickAdd(g, title)} />
+                  </div>
+                )}
                 <ul className={`min-h-16 space-y-2 overflow-y-auto p-2 [scrollbar-width:thin] ${full ? "max-h-[calc(100dvh-17rem)]" : "max-h-[30rem]"}`}>
                   {g.tasks.map((t) => (
                     <li key={t.id}>
@@ -842,7 +873,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   ))}
                   {!g.tasks.length && <li className="rounded-lg border border-dashed border-line p-3 text-center text-xs text-muted">{dragId ? "Drop here" : "No tasks"}</li>}
                 </ul>
-                {canAdd(g) && <InlineAdd card onAdd={(title) => quickAdd(g, title)} />}
+
               </div>
             ),
           )}
@@ -1079,8 +1110,8 @@ function DayAdd({ onAdd, onClose }: { onAdd: (title: string) => Promise<string |
 }
 
 /** "+ Add task" at the foot of a group or board column: type a title, Enter adds it. */
-function InlineAdd({ onAdd, card = false }: { onAdd: (title: string) => Promise<string | null>; card?: boolean }) {
-  const [open, setOpen] = useState(false);
+function InlineAdd({ onAdd, card = false, always = false }: { onAdd: (title: string) => Promise<string | null>; card?: boolean; always?: boolean }) {
+  const [open, setOpen] = useState(always);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1111,11 +1142,11 @@ function InlineAdd({ onAdd, card = false }: { onAdd: (title: string) => Promise<
     <form onSubmit={submit} className={`space-y-1 ${card ? "px-2 pb-2" : "border-t border-line/50 px-3 py-1.5"}`}>
       <div className="flex gap-1.5">
         <input
-          autoFocus
+          autoFocus={!always}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setTitle(""))}
-          placeholder="Task name, then Enter"
+          onKeyDown={(e) => e.key === "Escape" && (setOpen(always), setTitle(""))}
+          placeholder={always ? "+ Add task — type and press Enter" : "Task name, then Enter"}
           maxLength={300}
           disabled={busy}
           className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-sm"
@@ -1123,9 +1154,9 @@ function InlineAdd({ onAdd, card = false }: { onAdd: (title: string) => Promise<
         <button type="submit" disabled={busy || !title.trim()} className="rounded-lg bg-accent px-2.5 text-xs font-medium text-white disabled:opacity-50">
           {busy ? "…" : "Add"}
         </button>
-        <button type="button" onClick={() => (setOpen(false), setTitle(""))} aria-label="Cancel" className="px-1 text-muted hover:text-fg">
+        {!always && <button type="button" onClick={() => (setOpen(false), setTitle(""))} aria-label="Cancel" className="px-1 text-muted hover:text-fg">
           ✕
-        </button>
+        </button>}
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
     </form>
