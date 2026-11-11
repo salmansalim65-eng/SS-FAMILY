@@ -101,6 +101,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [error, setError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Full screen: opening the board fills the screen; ✕ or Esc goes back to the panel.
+  const [full, setFull] = useState(false);
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -135,6 +137,17 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("[aria-label='Task options'][role=dialog]") && setFull(false);
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [full]);
 
   function setPref(patch: Partial<Prefs>) {
     setPrefs((p) => {
@@ -270,6 +283,22 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     if (!res.ok) setError(res.error);
     load(true);
   }
+
+  /** "+ Add task" inside a group: the new task takes that group's project, column, due date or priority. */
+  async function quickAdd(g: Group, title: string): Promise<string | null> {
+    const fallback = projects.some((p) => p.id === prefs.lastProject) ? prefs.lastProject! : projects[0]?.id;
+    const project = prefs.groupBy === "project" ? g.key : fallback;
+    if (!project) return "No project to add to.";
+    const due = prefs.groupBy === "due" ? (g.key === "today" ? todayS : g.key === "week" ? tomorrowS : g.key === "later" ? laterS : null) : null;
+    const priority = prefs.groupBy === "priority" && g.key !== "none" ? g.key : null;
+    const res = await addSsTask(project, title, due, priority);
+    if (!res.ok) return res.error;
+    if (prefs.groupBy === "progress" && g.key !== "to do") await editSsTask(res.id, { bucket: g.label });
+    if (prefs.tab !== "mine") setPref({ tab: "mine" });
+    load(true);
+    return null;
+  }
+  const canAdd = (g: Group) => projects.length > 0 && g.droppable;
 
   /** What dropping a task on a group changes, for the current grouping. */
   function dropPatch(g: Group): Patch | null {
@@ -412,7 +441,12 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const dropRing = (g: Group) => (over === g.key ? "ring-2 ring-accent ring-offset-1 ring-offset-surface" : "");
 
   return (
-    <section className="flex min-w-0 flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm">
+    <section
+      className={`flex min-w-0 flex-col bg-surface ${full ? "fixed inset-0 z-[60] overflow-y-auto p-4 sm:p-6" : "rounded-2xl border border-line p-4 shadow-sm"}`}
+      aria-modal={full || undefined}
+      role={full ? "dialog" : undefined}
+      aria-label={full ? "SS Tasks" : undefined}
+    >
       {/* Title row */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span aria-hidden className="text-lg">
@@ -423,7 +457,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           <button type="button" onClick={() => setPref({ view: "list" })} aria-pressed={prefs.view === "list"} className={segBtn(prefs.view === "list")}>
             ☰ List
           </button>
-          <button type="button" onClick={() => setPref({ view: "board" })} aria-pressed={prefs.view === "board"} className={segBtn(prefs.view === "board")}>
+          <button
+            type="button"
+            onClick={() => {
+              setPref({ view: "board" });
+              setFull(true);
+            }}
+            aria-pressed={prefs.view === "board"}
+            className={segBtn(prefs.view === "board")}
+            title="Board — opens full screen"
+          >
             ▦ Board
           </button>
         </div>
@@ -455,6 +498,15 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         <a href={appUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open SS Tasks">
           Open ↗
         </a>
+        <button
+          type="button"
+          onClick={() => setFull((f) => !f)}
+          title={full ? "Back to the dashboard (Esc)" : "Full screen"}
+          aria-label={full ? "Exit full screen" : "Full screen"}
+          className={`rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2 ${full ? "bg-surface-2 font-medium" : ""}`}
+        >
+          {full ? "✕ Close" : "⛶"}
+        </button>
       </div>
 
       {adding && (
@@ -549,7 +601,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
 
       {/* List view */}
       {prefs.view === "list" && shown.length > 0 && (
-        <div className="max-h-[34rem] flex-1 space-y-2 overflow-y-auto p-0.5 pr-1 [scrollbar-width:thin]">
+        <div className={`flex-1 space-y-2 overflow-y-auto p-0.5 pr-1 [scrollbar-width:thin] ${full ? "" : "max-h-[34rem]"}`}>
           {groups.map((g) => {
             const folded = isFolded(g.key);
             const late = lateCount(g.tasks);
@@ -582,6 +634,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   ) : (
                     <p className="px-3 py-2 text-xs text-muted">{dragId ? "Drop here" : "No tasks"}</p>
                   ))}
+                {!folded && canAdd(g) && <InlineAdd onAdd={(title) => quickAdd(g, title)} />}
               </div>
             );
           })}
@@ -606,7 +659,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                 <span className="text-sm font-semibold [writing-mode:vertical-rl]">{g.label}</span>
               </button>
             ) : (
-              <div key={g.key} {...dropProps(g)} className={`flex w-60 shrink-0 flex-col rounded-xl bg-surface-2/70 transition ${dropRing(g)}`} style={{ borderTop: `4px solid ${g.color}` }}>
+              <div key={g.key} {...dropProps(g)} className={`flex shrink-0 flex-col rounded-xl bg-surface-2/70 transition ${full ? "w-72" : "w-60"} ${dropRing(g)}`} style={{ borderTop: `4px solid ${g.color}` }}>
                 <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: tint(g.color, 10) }}>
                   <button type="button" onClick={() => toggleFold(g.key)} title="Collapse" className="text-xs text-muted hover:text-fg">
                     ◂
@@ -620,7 +673,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     {g.sub}
                   </p>
                 )}
-                <ul className="max-h-[30rem] min-h-16 space-y-2 overflow-y-auto p-2 [scrollbar-width:thin]">
+                <ul className={`min-h-16 space-y-2 overflow-y-auto p-2 [scrollbar-width:thin] ${full ? "max-h-[calc(100dvh-17rem)]" : "max-h-[30rem]"}`}>
                   {g.tasks.map((t) => (
                     <li key={t.id}>
                       {row(t, true)}
@@ -628,12 +681,67 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   ))}
                   {!g.tasks.length && <li className="rounded-lg border border-dashed border-line p-3 text-center text-xs text-muted">{dragId ? "Drop here" : "No tasks"}</li>}
                 </ul>
+                {canAdd(g) && <InlineAdd card onAdd={(title) => quickAdd(g, title)} />}
               </div>
             ),
           )}
         </div>
       )}
     </section>
+  );
+}
+
+/** "+ Add task" at the foot of a group or board column: type a title, Enter adds it. */
+function InlineAdd({ onAdd, card = false }: { onAdd: (title: string) => Promise<string | null>; card?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    setError(null);
+    const err = await onAdd(t);
+    setBusy(false);
+    if (err) return setError(err);
+    setTitle(""); // stays open for the next one
+  }
+
+  if (!open)
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`flex w-full items-center gap-1.5 text-left text-xs font-medium text-accent hover:bg-surface-2 ${card ? "rounded-b-xl px-3 py-2" : "border-t border-line/50 px-3 py-1.5"}`}
+      >
+        <span className="text-base leading-none">+</span> Add task
+      </button>
+    );
+  return (
+    <form onSubmit={submit} className={`space-y-1 ${card ? "px-2 pb-2" : "border-t border-line/50 px-3 py-1.5"}`}>
+      <div className="flex gap-1.5">
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setTitle(""))}
+          placeholder="Task name, then Enter"
+          maxLength={300}
+          disabled={busy}
+          className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-sm"
+        />
+        <button type="submit" disabled={busy || !title.trim()} className="rounded-lg bg-accent px-2.5 text-xs font-medium text-white disabled:opacity-50">
+          {busy ? "…" : "Add"}
+        </button>
+        <button type="button" onClick={() => (setOpen(false), setTitle(""))} aria-label="Cancel" className="px-1 text-muted hover:text-fg">
+          ✕
+        </button>
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </form>
   );
 }
 
@@ -680,7 +788,7 @@ function TaskMenu({
   const progress = (task.bucket ?? "To do").toLowerCase();
 
   return (
-    <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-50 max-h-[85vh] w-[264px] space-y-3 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
+    <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-[70] max-h-[85vh] w-[264px] space-y-3 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
       <div className="space-y-1.5">
         <p className={label}>Due date</p>
         <div className="flex flex-wrap gap-1">

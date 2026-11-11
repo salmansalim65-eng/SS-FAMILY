@@ -9,11 +9,29 @@ import { supabase } from "@/lib/supabase/client";
 import type { Bucket, Profile, Task } from "@/lib/types";
 
 type View = "mine" | "by_me";
+type Layout = "board" | "due";
 
 /** Every task given to me (or that I gave), across all workspaces, by when it's due. */
 export default function MyTasks() {
   const { me, projects, workspaces, members, people } = useAppData();
   const [view, setView] = useState<View>("mine");
+  // Board (a column per project) by default; "?layout=due" or the toggle shows the due-date list.
+  const [layout, setLayout] = useState<Layout>("board");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("layout");
+    if (q === "due" || q === "board") setLayout(q);
+    else {
+      try {
+        if (localStorage.getItem("sstasks.homeLayout") === "due") setLayout("due");
+      } catch {}
+    }
+  }, []);
+  function pickLayout(l: Layout) {
+    setLayout(l);
+    try {
+      localStorage.setItem("sstasks.homeLayout", l);
+    } catch {}
+  }
   const [tasks, setTasks] = useState<Task[]>([]);
   const [open, setOpen] = useState<Task | null>(null);
   const [buckets, setBuckets] = useState<Bucket[]>([]);
@@ -59,6 +77,27 @@ export default function MyTasks() {
     ].map((g) => ({ ...g, items: g.items.sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")) }));
   }, [tasks]);
 
+  // One column per project, projects with late work first.
+  const columns = useMemo(() => {
+    const t = todayKey();
+    const map = new Map<string, Task[]>();
+    for (const x of tasks) map.set(x.project_id, [...(map.get(x.project_id) ?? []), x]);
+    return [...map.entries()]
+      .map(([id, items]) => {
+        const p = projects.find((x) => x.id === id);
+        const w = workspaces.find((x) => x.id === p?.workspace_id);
+        return {
+          id,
+          name: p?.name ?? "Project",
+          workspace: w?.name ?? "",
+          color: p?.color ?? "#94a3b8",
+          late: items.filter((x) => !!x.due_date && x.due_date < t).length,
+          items: items.sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")),
+        };
+      })
+      .sort((a, b) => Number(b.late > 0) - Number(a.late > 0) || a.workspace.localeCompare(b.workspace) || a.name.localeCompare(b.name));
+  }, [tasks, projects, workspaces]);
+
   const projectName = (id: string) => {
     const p = projects.find((x) => x.id === id);
     const w = workspaces.find((x) => x.id === p?.workspace_id);
@@ -102,6 +141,24 @@ export default function MyTasks() {
           ))}
         </div>
         <span className="text-sm text-muted">{tasks.length} open</span>
+        <div className="ml-auto flex rounded-full border border-line bg-surface p-0.5 text-sm" role="group" aria-label="Layout">
+          {(
+            [
+              ["board", "▦ Board"],
+              ["due", "☰ By due date"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={layout === k}
+              onClick={() => pickLayout(k)}
+              className={`rounded-full px-3 py-1 ${layout === k ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {workspaces.length === 0 && (
@@ -111,7 +168,34 @@ export default function MyTasks() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      {layout === "board" && (
+        <div className="-mx-1 flex gap-4 overflow-x-auto px-1 pb-3">
+          {columns.map((c) => (
+            <section key={c.id} className="flex w-72 shrink-0 flex-col rounded-2xl bg-surface-2/70" style={{ borderTop: `4px solid ${c.color}` }}>
+              <a
+                href={`/p/${c.id}`}
+                className="flex items-center gap-2 rounded-t-xl px-3 py-2 hover:underline"
+                style={{ backgroundColor: `color-mix(in srgb, ${c.color} 12%, transparent)` }}
+                title="Open this project's board"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{c.name}</span>
+                  <span className="block truncate text-xs text-muted">{c.workspace}</span>
+                </span>
+                {c.late > 0 && <span className="rounded-full bg-red-600 px-1.5 text-xs text-white">{c.late} late</span>}
+                <span className="rounded-full bg-surface/80 px-1.5 text-xs text-muted">{c.items.length}</span>
+              </a>
+              <div className="max-h-[70vh] space-y-2 overflow-y-auto p-2">
+                {c.items.map((t) => (
+                  <TaskCard key={t.id} task={t} onOpen={() => setOpen(t)} onToggle={() => toggle(t)} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      <div className={`grid gap-4 md:grid-cols-2 2xl:grid-cols-3 ${layout === "board" ? "hidden" : ""}`}>
         {groups
           .filter((g) => g.items.length > 0)
           .map((g) => (
