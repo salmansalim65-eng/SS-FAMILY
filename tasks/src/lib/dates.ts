@@ -20,3 +20,9 @@ export function ago(iso: string) {
   if (h < 48) return `${h}h ago`;
   return fmt.format(new Date(iso));
 }
+/** 2026-11-10 → 10/11/2026 */
+export const dmy = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;
+/** Whole days from a due date to today (positive = late). */
+export function daysLate(due: string) {
+  return Math.round((Date.parse(`${todayKey()}T00:00:00Z`) - Date.parse(`${due}T00:00:00Z`)) / 86400000);
+}

@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase/client";
 /** A workspace (company): its projects, with open / late counts, and its people. */
 export default function WorkspacePage() {
   const { ws } = useParams<{ ws: string }>();
-  const { workspaces, projects, members, people, reload } = useAppData();
+  const { me, workspaces, projects, members, people, reload } = useAppData();
   const workspace = workspaces.find((w) => w.id === ws);
   const list = projects.filter((p) => p.workspace_id === ws);
   const team = members.filter((m) => m.workspace_id === ws);
@@ -107,6 +107,11 @@ export default function WorkspacePage() {
           </button>
         )}
         <div className="flex-1" />
+        {(workspace.role === "owner" || (!!me && workspace.mudeer_id === me.id)) && (
+          <Link href={`/w/${ws}/report`} className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm hover:bg-surface-2">
+            📊 Report
+          </Link>
+        )}
         <Link href={`/w/${ws}/members`} className="flex items-center gap-2 rounded-full border border-line bg-surface py-1 pl-1 pr-3 text-sm hover:bg-surface-2">
           <span className="flex -space-x-2">
             {team.slice(0, 5).map((m) => (

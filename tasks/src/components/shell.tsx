@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { todayKey } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 import { COLORS } from "@/lib/types";
 import { Bell } from "./bell";
@@ -14,6 +15,20 @@ export function Shell({ userId, children }: { userId: string; children: React.Re
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [lateCount, setLateCount] = useState(0);
+
+  // How many of the tasks I can see are past their due date.
+  useEffect(() => {
+    const ids = projects.map((p) => p.id);
+    if (!ids.length) return;
+    supabase()
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .in("project_id", ids)
+      .eq("done", false)
+      .lt("due_date", todayKey())
+      .then(({ count }) => setLateCount(count ?? 0));
+  }, [projects, path]);
 
   async function newWorkspace() {
     const name = prompt("Workspace (company) name");
@@ -50,6 +65,11 @@ export function Shell({ userId, children }: { userId: string; children: React.Re
       <div className="space-y-0.5">
         <Link href="/" onClick={() => setOpen(false)} className={link("/", path === "/")}>
           <span aria-hidden>☑</span> My tasks
+        </Link>
+        <Link href="/late" onClick={() => setOpen(false)} className={link("/late", path === "/late")}>
+          <span aria-hidden>⏰</span>
+          <span className="flex-1">Late</span>
+          {lateCount > 0 && <span className="rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-5 text-white">{lateCount}</span>}
         </Link>
       </div>
       {workspaces.map((w) => (

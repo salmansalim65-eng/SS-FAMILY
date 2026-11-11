@@ -189,3 +189,29 @@ export async function shareSsProject(project: string, email: string): Promise<Sh
   if (error) throw new Error(error.message);
   return data as ShareResult;
 }
+
+export type SsProjectMembers = {
+  can_manage: boolean;
+  me: string;
+  members: { id: string; name: string; email: string; role: "owner" | "member"; guest: boolean }[];
+  candidates: { id: string; name: string }[];
+};
+
+/** Who is in a project, and the workspace people who could be added. */
+export async function getSsProjectMembers(project: string): Promise<SsProjectMembers> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_members", { p_key: dashboardKey(), p_project: project })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as SsProjectMembers;
+}
+
+export type SsMemberAction = "add" | "remove" | "owner" | "member";
+
+/** Adds a workspace person to a project, removes them, or changes their role (project owners only). */
+export async function setSsProjectMember(project: string, user: string, action: SsMemberAction) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_member_set", { p_key: dashboardKey(), p_project: project, p_user: user, p_action: action })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}

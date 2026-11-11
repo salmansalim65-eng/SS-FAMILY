@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { TaskPanel } from "@/components/task-panel";
-import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, removeProject, removeTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
+import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, projectMembers, removeProject, removeTask, setProjectMember, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 import type { CalendarEvent } from "@/lib/types";
@@ -141,6 +142,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null); // the task panel
+  const [membersOf, setMembersOf] = useState<string | null>(null); // the project members panel
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -380,6 +382,26 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     load(true);
   }
 
+  /** 👥 n on a project's header: who is in it; owners add / remove people there. */
+  const membersBtn = (g: Group) => {
+    if (prefs.groupBy !== "project") return null;
+    const n = projects.find((p) => p.id === g.key)?.people?.length ?? 0;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMembersOf(g.key);
+        }}
+        title={`Members of ${g.label}`}
+        aria-label={`Members of ${g.label}`}
+        className="flex items-center gap-0.5 rounded px-1 text-xs text-muted hover:bg-surface/80 hover:text-fg"
+      >
+        👥<span>{n}</span>
+      </button>
+    );
+  };
+
   const delProjectBtn = (g: Group) =>
     prefs.groupBy === "project" ? (
       <button
@@ -553,6 +575,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           </span>
         )}
         {prefs.tab === "by_me" && t.assignees.length > 0 && !compact && <span className="truncate">→ {t.assignees.join(", ")}</span>}
+        {t.assignees.length > 0 && (compact || prefs.tab !== "by_me") && (
+          <span className="ml-auto flex -space-x-1.5" title={`Assigned to ${t.assignees.join(", ")}`}>
+            {t.assignees.slice(0, 3).map((name) => (
+              <span key={name} className="grid size-5 place-items-center rounded-full border border-surface bg-accent/15 text-[9px] font-semibold text-accent">
+                {initialsOf(name)}
+              </span>
+            ))}
+            {t.assignees.length > 3 && <span className="grid size-5 place-items-center rounded-full border border-surface bg-surface-2 text-[9px]">+{t.assignees.length - 3}</span>}
+          </span>
+        )}
       </span>
     );
   }
@@ -702,9 +734,6 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             👥 Share
           </button>
         )}
-        <a href={appUrl} className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open the Task Hub app here">
-          Open ↗
-        </a>
         <button
           type="button"
           onClick={() => setFull((f) => !f)}
@@ -750,6 +779,15 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             />
           );
         })()}
+      {membersOf && (
+        <MembersPanel
+          project={projects.find((p) => p.id === membersOf) ?? null}
+          projectId={membersOf}
+          appUrl={appUrl}
+          onClose={() => setMembersOf(null)}
+          onChanged={() => load(true)}
+        />
+      )}
       {adding && (
         <AddTask
           projects={projects}
@@ -863,7 +901,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     <span className="rounded-full bg-surface/80 px-1.5 text-muted">{g.tasks.length}</span>
                   </span>
                 </button>
-                {delProjectBtn(g)}
+                {membersBtn(g)}
+                  {delProjectBtn(g)}
                 </div>
                 {!folded && canAdd(g) && <InlineAdd always onAdd={(title) => quickAdd(g, title)} />}
                 {!folded &&
@@ -911,6 +950,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
                   {lateCount(g.tasks) > 0 && <span className="rounded-full bg-red-600 px-1.5 text-xs text-white">{lateCount(g.tasks)}</span>}
                   <span className="ml-auto rounded-full bg-surface/80 px-1.5 text-xs text-muted">{g.tasks.length}</span>
+                  {membersBtn(g)}
                   {delProjectBtn(g)}
                 </div>
                 {g.sub && (
@@ -1885,4 +1925,172 @@ function ShareProject({ projects, appUrl, onChanged }: { projects: Project[]; ap
       {msg && "invite" in msg && <InviteLink appUrl={appUrl} token={msg.invite.token} email={msg.invite.email} />}
     </div>
   );
+}
+
+/** A project's members, in a window over the dashboard. Project owners add workspace people (or anyone by email), remove them and make owners. */
+function MembersPanel({
+  project,
+  projectId,
+  appUrl,
+  onClose,
+  onChanged,
+}: {
+  project: Project | null;
+  projectId: string;
+  appUrl: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof projectMembers>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  const [email, setEmail] = useState("");
+
+  const load = useCallback(async () => setData(await projectMembers(projectId)), [projectId]);
+  useEffect(() => {
+    load();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [load, onClose]);
+
+  async function change(user: string, action: "add" | "remove" | "owner" | "member", label?: string) {
+    if (action === "remove" && !confirm(`Remove ${label} from ${project?.name ?? "this project"}? Their tasks stay in the project.`)) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await setProjectMember(projectId, user, action);
+    setBusy(false);
+    if (!res.ok) return setMsg({ error: res.error });
+    await load();
+    onChanged();
+  }
+
+  async function addByEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await shareProject(projectId, email);
+    setBusy(false);
+    if (!res.ok) return setMsg({ error: res.error });
+    if (res.data.status === "added") {
+      setMsg({ ok: `${res.data.name} added.` });
+      setEmail("");
+    } else setMsg({ invite: { token: res.data.token, email: res.data.email } });
+    await load();
+    onChanged();
+  }
+
+  const d = data?.ok ? data.data : null;
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Project members"
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[85dvh] w-full max-w-md space-y-3 overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+      >
+        <div className="flex items-center gap-2">
+          <span className="size-3 rounded-full" style={{ background: project?.color ?? GRAY }} aria-hidden />
+          <h3 className="min-w-0 flex-1 truncate font-semibold">👥 {project?.name ?? "Project"} — members</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded px-1.5 text-muted hover:text-fg">
+            ✕
+          </button>
+        </div>
+
+        {!data && <p className="text-sm text-muted">Loading…</p>}
+        {data && !data.ok && <p className="text-sm text-danger">{data.error}</p>}
+
+        {d && (
+          <>
+            <ul className="divide-y divide-line rounded-xl border border-line">
+              {d.members.map((m) => (
+                <li key={m.id} className="flex items-center gap-2 px-3 py-2">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">{initialsOf(m.name)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {m.name}
+                      {m.id === d.me && <span className="text-muted"> (you)</span>}
+                    </span>
+                    <span className="block truncate text-xs text-muted">{m.email}</span>
+                  </span>
+                  {m.role === "owner" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">Owner</span>}
+                  {m.guest && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">Guest</span>}
+                  {d.can_manage && m.id !== d.me && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => change(m.id, m.role === "owner" ? "member" : "owner")}
+                        className="rounded-md border border-line px-1.5 py-0.5 text-[11px] hover:bg-surface-2"
+                        title={m.role === "owner" ? "Make a regular member" : "Make an owner (manages the project)"}
+                      >
+                        {m.role === "owner" ? "Remove owner" : "Make owner"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => change(m.id, "remove", m.name)}
+                        aria-label={`Remove ${m.name}`}
+                        title="Remove from the project"
+                        className="rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-danger-soft hover:text-danger"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            {d.can_manage ? (
+              <div className="space-y-2">
+                {d.candidates.length > 0 && (
+                  <select
+                    value=""
+                    disabled={busy}
+                    onChange={(e) => e.target.value && change(e.target.value, "add")}
+                    aria-label="Add someone from the workspace"
+                    className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
+                  >
+                    <option value="">＋ Add someone from {project?.workspace ?? "the workspace"}…</option>
+                    {d.candidates.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <form onSubmit={addByEmail} className="flex gap-2">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="…or add by email"
+                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
+                  />
+                  <button type="submit" disabled={busy || !email.trim()} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                    Add
+                  </button>
+                </form>
+                <p className="text-[11px] text-muted">Members see their own tasks in this project; owners see all of them and manage the project.</p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">Only the project&apos;s owners can change its members.</p>
+            )}
+            {msg && "ok" in msg && <p className="text-xs text-up">{msg.ok}</p>}
+            {msg && "error" in msg && <p className="text-xs text-danger">{msg.error}</p>}
+            {msg && "invite" in msg && <InviteLink appUrl={appUrl} token={msg.invite.token} email={msg.invite.email} />}
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function initialsOf(name: string) {
+  const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
 }
