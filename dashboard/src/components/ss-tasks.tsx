@@ -212,7 +212,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown, prefs.groupBy, todayS, weekS]);
 
-  const foldKey = (g: string) => `${prefs.groupBy}:${g}`;
+  // List and board fold separately, so collapsing the list never shrinks the board.
+  const foldKey = (g: string) => `${prefs.view}:${prefs.groupBy}:${g}`;
   const isFolded = (g: string) => prefs.folded.includes(foldKey(g));
   const toggleFold = (g: string) => setPref({ folded: isFolded(g) ? prefs.folded.filter((k) => k !== foldKey(g)) : [...prefs.folded, foldKey(g)] });
   const allFolded = groups.length > 0 && groups.every((g) => isFolded(g.key));
@@ -435,6 +436,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             <option value="priority">Priority</option>
           </select>
         </label>
+        {prefs.view === "list" && (
         <button
           type="button"
           onClick={foldAll}
@@ -444,6 +446,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         >
           {allFolded ? "⊞ Expand" : "⊟ Collapse"}
         </button>
+        )}
         {projects.length > 0 && (
           <button type="button" onClick={() => setAdding((a) => !a)} className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90">
             {adding ? "✕ Close" : "+ Task"}
