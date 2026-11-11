@@ -25,7 +25,7 @@ export function TaskDrawer({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { me, people } = useAppData();
+  const { me, people, projects, workspaces } = useAppData();
   const [task, setTask] = useState<Task | null>(null);
   const [checks, setChecks] = useState<ChecklistItem[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -58,6 +58,19 @@ export function TaskDrawer({
     setTask({ ...task, ...patch });
     const { error } = await supabase().from("tasks").update(patch).eq("id", task.id);
     if (error) setError(error.message);
+    onChanged();
+  }
+
+  /** Moves the task to another project, into that project's first column (Done stays done). */
+  async function moveTo(projectId: string) {
+    if (!task || projectId === task.project_id) return;
+    const sb = supabase();
+    const { data: cols } = await sb.from("buckets").select("id, name, position").eq("project_id", projectId).order("position");
+    const done = (cols ?? []).find((b) => b.name.toLowerCase() === "done");
+    const bucket = task.done && done ? done.id : (cols?.[0]?.id ?? null);
+    const { error } = await sb.from("tasks").update({ project_id: projectId, bucket_id: bucket }).eq("id", task.id);
+    if (error) return setError(error.message);
+    setTask({ ...task, project_id: projectId, bucket_id: bucket });
     onChanged();
   }
 
@@ -142,6 +155,24 @@ export function TaskDrawer({
               aria-label="Title"
               className={`${field} text-base font-semibold`}
             />
+
+            <label className="block space-y-1 text-sm">
+              <span className="text-xs text-muted">Project (move)</span>
+              <select value={task.project_id} onChange={(e) => moveTo(e.target.value)} className={field} aria-label="Move to project">
+                {workspaces.map((w) => {
+                  const ps = projects.filter((p) => p.workspace_id === w.id && !p.archived);
+                  return ps.length ? (
+                    <optgroup key={w.id} label={w.name}>
+                      {ps.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null;
+                })}
+              </select>
+            </label>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <label className="space-y-1">

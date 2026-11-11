@@ -5,7 +5,7 @@ import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
-/** Ticks an SS Tasks task done (or open again), as SS. */
+/** Ticks an Task Hub task done (or open again), as SS. */
 export async function tickSsTask(id: string, done: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireOwner();
@@ -19,7 +19,7 @@ export async function tickSsTask(id: string, done: boolean): Promise<{ ok: true 
 
 const PRIORITIES = ["urgent", "important", "medium", "low"];
 
-/** Adds a task in one of the owner's SS Tasks projects, assigned to the owner. */
+/** Adds a task in one of the owner's Task Hub projects, assigned to the owner. */
 export async function addSsTask(
   project: string,
   title: string,
@@ -95,7 +95,7 @@ export async function assignTaskByEmail(id: string, email: string): Promise<{ ok
   }
 }
 
-/** Adds a project to one of SS's workspaces in SS Tasks. */
+/** Adds a project to one of SS's workspaces in Task Hub. */
 export async function addSsProject(workspace: string, name: string, color: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireOwner();
@@ -109,7 +109,7 @@ export async function addSsProject(workspace: string, name: string, color: strin
   }
 }
 
-/** Shares an SS Tasks project with someone by email. */
+/** Shares an Task Hub project with someone by email. */
 export async function shareProject(project: string, email: string): Promise<{ ok: true; data: ShareResult } | { ok: false; error: string }> {
   try {
     await requireOwner();

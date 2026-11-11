@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "SS Tasks",
-    short_name: "SS Tasks",
+    name: "Task Hub",
+    short_name: "Task Hub",
     start_url: "/",
     display: "standalone",
     background_color: "#f5f6fa",

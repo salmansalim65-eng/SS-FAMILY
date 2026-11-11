@@ -163,7 +163,7 @@ export default function MyTasks() {
 
       {workspaces.length === 0 && (
         <div className="rounded-2xl border border-line bg-surface p-6 text-sm">
-          <p className="font-medium">Welcome to SS Tasks 👋</p>
+          <p className="font-medium">Welcome to Task Hub 👋</p>
           <p className="mt-1 text-muted">Start with ＋ New workspace in the sidebar — one for each company (SSA, RMI, MBL, VISTA…).</p>
         </div>
       )}

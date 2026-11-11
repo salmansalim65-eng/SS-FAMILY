@@ -66,7 +66,7 @@ export default function JoinPage() {
       </AuthCard>
     );
 
-  const where = invite.project ? `${invite.project}${invite.workspace ? ` · ${invite.workspace}` : ""}` : (invite.workspace ?? "SS Tasks");
+  const where = invite.project ? `${invite.project}${invite.workspace ? ` · ${invite.workspace}` : ""}` : (invite.workspace ?? "Task Hub");
   return (
     <AuthCard
       title={`Join ${where}`}

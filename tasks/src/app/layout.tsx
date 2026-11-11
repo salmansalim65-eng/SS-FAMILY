@@ -5,9 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "SS Tasks",
+  title: "Task Hub",
   description: "Projects, shared and assigned tasks across every company",
-  appleWebApp: { title: "SS Tasks", capable: true, statusBarStyle: "default" },
+  appleWebApp: { title: "Task Hub", capable: true, statusBarStyle: "default" },
   robots: { index: false, follow: false },
 };
 
