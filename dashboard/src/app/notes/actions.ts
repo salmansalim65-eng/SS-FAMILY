@@ -97,3 +97,18 @@ export async function reorderNotes(ids: string[]): Promise<NoteResult> {
     return undefined;
   });
 }
+
+/** Every note, as the panel shows them — used to pick up notes added or changed on another device. */
+export async function listNotes(): Promise<NoteResult<Note[]>> {
+  return attempt(async () => {
+    const { supabase } = await requireOwner();
+    const { data, error } = await supabase
+      .from("dashboard_notes")
+      .select(COLUMNS)
+      .order("pinned", { ascending: false })
+      .order("sort_order")
+      .order("created_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Note[];
+  });
+}

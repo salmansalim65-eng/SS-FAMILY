@@ -13,13 +13,15 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createNote, deleteNote, reorderNotes, updateNote, type NotePatch } from "@/app/notes/actions";
+import { createNote, deleteNote, listNotes, reorderNotes, updateNote, type NotePatch } from "@/app/notes/actions";
+import { onDashboardRefresh } from "@/lib/refresh-event";
 import type { ChecklistItem, Note, NoteColor } from "@/lib/types";
 import { toRomanUrdu } from "@/lib/roman-urdu";
 import { DICTATION_LANG_KEY as LANG_KEY, DICTATION_LANGS, useDictation } from "./dictation";
 import { Section } from "./section";
 
 const SAVE_DELAY_MS = 600;
+const SYNC_MS = 60_000;
 
 const COLORS: { key: NoteColor; card: string; dot: string }[] = [
   { key: "yellow", card: "bg-amber-100 border-amber-200 dark:bg-amber-950/50 dark:border-amber-900", dot: "bg-amber-300" },
@@ -86,6 +88,37 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
       document.removeEventListener("visibilitychange", onHide);
     };
   }, [flush]);
+
+  // Pick up notes added or changed on another device (phone ↔ laptop): on the
+  // dashboard's ↻, when the tab comes back into view, and every minute while
+  // it is visible. A note with an edit still waiting to save keeps this
+  // device's version, so nothing being typed is overwritten.
+  const syncing = useRef(false);
+  const sync = useCallback(async () => {
+    if (syncing.current || !initial) return;
+    syncing.current = true;
+    const res = await listNotes();
+    syncing.current = false;
+    if (!res.ok) return;
+    setNotes((local) => {
+      const mine = new Map(local.map((n) => [n.id, n]));
+      return arrange(res.data.map((n) => (pending.current.has(n.id) || timers.current.has(n.id) ? (mine.get(n.id) ?? n) : n)));
+    });
+  }, [initial]);
+
+  useEffect(() => {
+    const onShow = () => document.visibilityState === "visible" && sync();
+    const tick = setInterval(() => document.visibilityState === "visible" && sync(), SYNC_MS);
+    const off = onDashboardRefresh(sync);
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => {
+      clearInterval(tick);
+      off();
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
+    };
+  }, [sync]);
 
   /** Updates a note locally at once and saves it shortly after the last change. */
   const change = useCallback(
