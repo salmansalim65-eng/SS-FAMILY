@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addSsTask, assignTask, editSsTask, tickSsTask } from "@/app/sstasks/actions";
+import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 
@@ -37,11 +37,12 @@ type Task = {
 type Person = { id: string; name: string };
 type Project = { id: string; name: string; color: string | null; workspace: string; people?: Person[] };
 type Tab = "mine" | "by_me";
-type View = "list" | "board";
-type GroupBy = "project" | "progress" | "due" | "priority";
+type View = "list" | "board" | "calendar";
+type GroupBy = "project" | "progress" | "due" | "priority" | "assignee";
+type Workspace = { id: string; name: string; color: string | null };
 type Filter = "late" | "today" | "week" | "high";
 type Prefs = { tab: Tab; view: View; groupBy: GroupBy; folded: string[]; lastProject: string | null };
-type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; tasks: Task[]; projects: Project[] };
+type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; tasks: Task[]; projects: Project[]; workspaces: Workspace[] };
 type Group = { key: string; label: string; sub?: string; color: string; tasks: Task[]; droppable: boolean };
 type Patch = { due?: string | null; priority?: string | null; project?: string; bucket?: string };
 
@@ -76,6 +77,11 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = ({ y, m, d }: { y: number; m: number; d: number }) => `${y}-${pad(m)}-${pad(d)}`;
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 const tint = (hex: string, pct: number) => `color-mix(in srgb, ${hex} ${pct}%, transparent)`;
+const utc = (s: string) => new Date(`${s}T00:00:00Z`);
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const shift = (s: string, days: number) => iso(new Date(utc(s).getTime() + days * 86_400_000));
+const monthFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "long", year: "numeric" });
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function readPrefs(): Prefs {
   try {
@@ -103,8 +109,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [error, setError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [panel, setPanel] = useState<"project" | "share" | null>(null);
   // Full screen: opening the board fills the screen; ✕ or Esc goes back to the panel.
   const [full, setFull] = useState(false);
+  // Calendar view: month or week, the day it is anchored on, and per-day "+N more" / "+ add".
+  const [calMode, setCalMode] = useState<"month" | "week">("month");
+  const [calAnchor, setCalAnchor] = useState<string | null>(null);
+  const [moreDay, setMoreDay] = useState<string | null>(null);
+  const [addDay, setAddDay] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
@@ -116,7 +128,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       const res = await fetch(now ? "/api/sstasks?sync=now" : "/api/sstasks", { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Could not load SS Tasks");
-      setState({ status: "ready", tasks: body.tasks, projects: body.projects ?? [] });
+      setState({ status: "ready", tasks: body.tasks, projects: body.projects ?? [], workspaces: body.workspaces ?? [] });
       // Google Tasks sync: keep showing the last problem until a pass runs clean.
       const sync = body.sync as { ran?: boolean; error?: string; errors?: string[] } | null;
       if (sync?.error) setSyncError(sync.error);
@@ -168,7 +180,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const nextWeekS = ymd(addDays(today, 7));
   const laterS = ymd(addDays(today, 8));
   const tasks = useMemo(() => (state.status === "ready" ? state.tasks : []), [state]);
-  const projects = state.status === "ready" ? state.projects : [];
+  const projects = useMemo(() => (state.status === "ready" ? state.projects : []), [state]);
+  const workspaces = state.status === "ready" ? state.workspaces : [];
+  // Everyone SS can give tasks to, by id, from the projects' people.
+  const peopleById = useMemo(() => {
+    const m = new Map<string, Person>();
+    for (const p of projects) for (const x of p.people ?? []) m.set(x.id, x);
+    return m;
+  }, [projects]);
   const mine = tasks.filter((t) => t.mine);
   const byMe = tasks.filter((t) => t.by_me && !t.mine);
   const lateCount = (list: Task[]) => list.filter((t) => t.due && t.due < todayS).length;
@@ -203,6 +222,21 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         tasks: shown.filter((t) => (t.priority ?? "none") === g.key).sort(byDue),
       }));
     }
+    if (prefs.groupBy === "assignee") {
+      const map = new Map<string, Group>();
+      const none: Group = { key: "none", label: "Unassigned", color: GRAY, tasks: [], droppable: false };
+      const palette = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6"];
+      for (const t of shown) {
+        const ids = t.assignee_ids ?? [];
+        if (!ids.length) none.tasks.push(t);
+        for (const id of ids) {
+          const g = map.get(id) ?? { key: id, label: peopleById.get(id)?.name ?? "Someone", color: palette[map.size % palette.length], tasks: [], droppable: true };
+          g.tasks.push(t);
+          map.set(id, g);
+        }
+      }
+      return [...[...map.values()].sort((a, b) => a.label.localeCompare(b.label)), ...(none.tasks.length ? [none] : [])].map((g) => ({ ...g, tasks: g.tasks.sort(byDue) }));
+    }
     if (prefs.groupBy === "progress") {
       const names = [...new Set([...PROGRESS.map((p) => p.key), ...shown.map((t) => (t.bucket ?? "To do").toLowerCase())])];
       return names.map((n) => {
@@ -225,7 +259,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           Number(lateCount(b.tasks) > 0) - Number(lateCount(a.tasks) > 0) || (a.sub ?? "").localeCompare(b.sub ?? "") || a.label.localeCompare(b.label),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, prefs.groupBy, todayS, weekS]);
+  }, [shown, prefs.groupBy, todayS, weekS, peopleById]);
 
   // List and board fold separately, so collapsing the list never shrinks the board.
   const foldKey = (g: string) => `${prefs.view}:${prefs.groupBy}:${g}`;
@@ -296,6 +330,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     const res = await addSsTask(project, title, due, priority);
     if (!res.ok) return res.error;
     if (prefs.groupBy === "progress" && g.key !== "to do") await editSsTask(res.id, { bucket: g.label });
+    if (prefs.groupBy === "assignee" && g.key !== "none") {
+      const a = await assignTask(res.id, g.key, true);
+      if (!a.ok) setError(a.error);
+    }
     if (prefs.tab !== "mine") setPref({ tab: "mine" });
     load(true);
     return null;
@@ -348,6 +386,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       setOver(null);
       const t = tasks.find((x) => x.id === dragId);
       setDragId(null);
+      if (t && prefs.groupBy === "assignee") {
+        if (g.key !== "none" && !(t.assignee_ids ?? []).includes(g.key)) assign(t, { id: g.key, name: g.label }, true);
+        return;
+      }
       const patch = dropPatch(g);
       if (t && patch && !g.tasks.some((x) => x.id === t.id)) edit(t, patch);
     },
@@ -458,6 +500,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             dates={{ today: todayS, tomorrow: tomorrowS, nextWeek: nextWeekS }}
             onEdit={(patch) => edit(t, patch)}
             onAssign={(person, on) => assign(t, person, on)}
+              onAssigned={() => load(true)}
+              appUrl={appUrl}
             onClose={() => setMenu(null)}
             openHref={href(t)}
           />
@@ -498,6 +542,18 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           >
             ▦ Board
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPref({ view: "calendar" });
+              setFull(true);
+            }}
+            aria-pressed={prefs.view === "calendar"}
+            className={segBtn(prefs.view === "calendar")}
+            title="Calendar — opens full screen"
+          >
+            📅 Calendar
+          </button>
         </div>
         <label className="flex items-center gap-1 text-xs text-muted" title="Group by">
           <span className="hidden 2xl:inline">Group</span>
@@ -506,6 +562,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             <option value="progress">Progress</option>
             <option value="due">Due date</option>
             <option value="priority">Priority</option>
+            <option value="assignee">Assigned to</option>
           </select>
         </label>
         {prefs.view === "list" && (
@@ -525,6 +582,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             {adding ? "✕ Close" : "+ Task"}
           </button>
         )}
+        {workspaces.length > 0 && (
+          <button type="button" onClick={() => setPanel((x) => (x === "project" ? null : "project"))} aria-pressed={panel === "project"} className="rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2" title="New project">
+            + Project
+          </button>
+        )}
+        {projects.length > 0 && (
+          <button type="button" onClick={() => setPanel((x) => (x === "share" ? null : "share"))} aria-pressed={panel === "share"} className="rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2" title="Share a project by email">
+            👥 Share
+          </button>
+        )}
         <a href={appUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open SS Tasks">
           Open ↗
         </a>
@@ -539,6 +606,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         </button>
       </div>
 
+      {panel === "project" && (
+        <NewProject
+          workspaces={workspaces}
+          onDone={() => {
+            setPanel(null);
+            load(true);
+          }}
+        />
+      )}
+      {panel === "share" && <ShareProject projects={projects} appUrl={appUrl} onChanged={() => load(true)} />}
       {adding && (
         <AddTask
           projects={projects}
@@ -623,7 +700,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
 
       {state.status === "loading" && <p className="text-sm text-muted">Loading…</p>}
       {state.status === "error" && <p className="text-sm text-danger">{state.message}</p>}
-      {state.status === "ready" && shown.length === 0 && (
+      {state.status === "ready" && shown.length === 0 && prefs.view !== "calendar" && (
         <p className="py-4 text-center text-sm text-muted">
           {filters.size || q ? "No tasks match." : prefs.tab === "mine" ? "Nothing on your plate 🎉" : "No open tasks given to others."}
         </p>
@@ -717,7 +794,232 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           )}
         </div>
       )}
+      {prefs.view === "calendar" && state.status === "ready" && calendar()}
     </section>
+  );
+
+  /** Calendar view: tasks on their due dates; drag to another day to change it; unscheduled on the side. */
+  function calendar() {
+    const anchor = calAnchor ?? todayS;
+    const startOf = (s: string) => shift(s, -utc(s).getUTCDay());
+    const first = `${anchor.slice(0, 8)}01`;
+    const start = calMode === "month" ? startOf(first) : startOf(anchor);
+    const days = Array.from({ length: calMode === "month" ? 42 : 7 }, (_, i) => shift(start, i));
+    const byDay = new Map<string, Task[]>();
+    for (const t of shown) if (t.due) byDay.set(t.due, [...(byDay.get(t.due) ?? []), t]);
+    const unscheduled = shown.filter((t) => !t.due);
+    const move = (n: number) => {
+      if (calMode === "week") return setCalAnchor(shift(anchor, n * 7));
+      const d = utc(first);
+      d.setUTCMonth(d.getUTCMonth() + n);
+      setCalAnchor(iso(d));
+    };
+    const label =
+      calMode === "month"
+        ? monthFmt.format(utc(first))
+        : `${dueFmt.format(utc(days[0]))} – ${dueFmt.format(utc(days[6]))} ${days[6].slice(0, 4)}`;
+    const dropOn = (due: string | null) => ({
+      onDragOver: (e: React.DragEvent) => {
+        if (!dragId) return;
+        e.preventDefault();
+        setOver(`cal:${due}`);
+      },
+      onDragLeave: () => setOver((o) => (o === `cal:${due}` ? null : o)),
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        setOver(null);
+        const t = tasks.find((x) => x.id === dragId);
+        setDragId(null);
+        if (t && t.due !== due) edit(t, { due });
+      },
+    });
+    const ring = (due: string | null) => (over === `cal:${due}` ? "ring-2 ring-inset ring-accent" : "");
+    const limit = calMode === "month" ? 3 : 50;
+
+    const chip = (t: Task) => {
+      const late = !!t.due && t.due < todayS;
+      return (
+        <div
+          key={t.id}
+          {...dragProps(t)}
+          className={`group/chip relative flex cursor-grab items-center gap-1 rounded-md py-0.5 pl-1 pr-1.5 text-xs active:cursor-grabbing ${dragId === t.id ? "opacity-40" : ""}`}
+          style={{ backgroundColor: tint(t.color || GRAY, 16), borderLeft: `3px solid ${t.color || GRAY}` }}
+          title={`${t.title} · ${t.project}`}
+        >
+          <button
+            type="button"
+            onClick={() => tick(t)}
+            disabled={busy.has(t.id)}
+            aria-label={`Mark "${t.title}" done`}
+            className="flex size-3.5 shrink-0 items-center justify-center rounded-full border border-current text-[8px] text-transparent opacity-60 hover:text-emerald-600 hover:opacity-100"
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setMenu((m) => (m?.id === t.id ? null : { id: t.id, rect }));
+            }}
+            className={`min-w-0 flex-1 truncate text-left font-medium ${late ? "text-red-700 dark:text-red-300" : ""}`}
+          >
+            {t.priority === "urgent" && <span className="text-red-600">! </span>}
+            {t.title}
+          </button>
+          {menu?.id === t.id && (
+            <TaskMenu
+              anchor={menu.rect}
+              task={t}
+              projects={projects}
+              dates={{ today: todayS, tomorrow: tomorrowS, nextWeek: nextWeekS }}
+              onEdit={(patch) => edit(t, patch)}
+              onAssign={(person, on) => assign(t, person, on)}
+              onAssigned={() => load(true)}
+              appUrl={appUrl}
+              onClose={() => setMenu(null)}
+              openHref={href(t)}
+            />
+          )}
+        </div>
+      );
+    };
+
+    async function addOn(day: string, title: string) {
+      const fallback = projects.some((p) => p.id === prefs.lastProject) ? prefs.lastProject! : projects[0]?.id;
+      if (!fallback) return "No project to add to.";
+      const res = await addSsTask(fallback, title, day, null);
+      if (!res.ok) return res.error;
+      if (prefs.tab !== "mine") setPref({ tab: "mine" });
+      load(true);
+      return null;
+    }
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setCalAnchor(null)} className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-surface-2">
+              Today
+            </button>
+            <button type="button" onClick={() => move(-1)} aria-label="Previous" className="rounded-lg px-2 py-1 text-sm hover:bg-surface-2">
+              ‹
+            </button>
+            <button type="button" onClick={() => move(1)} aria-label="Next" className="rounded-lg px-2 py-1 text-sm hover:bg-surface-2">
+              ›
+            </button>
+            <span className="text-sm font-semibold">{label}</span>
+            <div className="ml-auto flex rounded-xl bg-surface-2 p-0.5">
+              {(["week", "month"] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setCalMode(m)} aria-pressed={calMode === m} className={segBtn(calMode === m)}>
+                  {m === "week" ? "Week" : "Month"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-line">
+            <div className="grid grid-cols-7 border-b border-line bg-surface-2/60 text-center text-xs font-medium text-muted">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="py-1.5">
+                  <span className="hidden sm:inline">{d}</span>
+                  <span className="sm:hidden">{d.slice(0, 2)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {days.map((day) => {
+                const items = (byDay.get(day) ?? []).sort((a, b) => a.title.localeCompare(b.title));
+                const inMonth = calMode === "week" || day.slice(0, 7) === first.slice(0, 7);
+                const isToday = day === todayS;
+                const all = moreDay === day;
+                return (
+                  <div
+                    key={day}
+                    {...dropOn(day)}
+                    className={`group/day relative flex flex-col gap-1 border-b border-r border-line/70 p-1 [&:nth-child(7n)]:border-r-0 ${
+                      calMode === "month" ? (full ? "min-h-[7.5rem]" : "min-h-[6rem]") : "min-h-[22rem]"
+                    } ${inMonth ? "" : "bg-surface-2/40 text-muted"} ${isToday ? "bg-accent/5" : ""} ${ring(day)}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`flex size-6 items-center justify-center rounded-full text-xs ${isToday ? "bg-accent font-semibold text-white" : ""}`}
+                      >
+                        {Number(day.slice(8))}
+                      </span>
+                      {projects.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setAddDay(addDay === day ? null : day)}
+                          aria-label={`Add a task on ${day}`}
+                          title="Add a task on this day"
+                          className="rounded px-1 text-sm leading-none text-accent opacity-0 hover:bg-surface-2 group-hover/day:opacity-100 focus:opacity-100"
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
+                    {(all ? items : items.slice(0, limit)).map(chip)}
+                    {items.length > limit && (
+                      <button type="button" onClick={() => setMoreDay(all ? null : day)} className="text-left text-[11px] text-muted hover:text-fg">
+                        {all ? "Show less" : `+${items.length - limit} more`}
+                      </button>
+                    )}
+                    {addDay === day && <DayAdd onAdd={(title) => addOn(day, title)} onClose={() => setAddDay(null)} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Unscheduled: drop here to clear a due date. */}
+        <aside {...dropOn(null)} className={`flex w-full shrink-0 flex-col rounded-xl bg-surface-2/70 lg:w-64 ${ring(null)}`}>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span className="text-sm font-semibold">Unscheduled</span>
+            <span className="ml-auto rounded-full bg-surface/80 px-1.5 text-xs text-muted">{unscheduled.length}</span>
+          </div>
+          <ul className={`space-y-2 overflow-y-auto p-2 [scrollbar-width:thin] ${full ? "max-h-[calc(100dvh-14rem)]" : "max-h-[30rem]"}`}>
+            {unscheduled.map((t) => (
+              <li key={t.id}>{row(t, true)}</li>
+            ))}
+            {!unscheduled.length && <li className="rounded-lg border border-dashed border-line p-3 text-center text-xs text-muted">No tasks without a date</li>}
+          </ul>
+          {projects.length > 0 && <InlineAdd card onAdd={(title) => addOn("", title)} />}
+        </aside>
+      </div>
+    );
+  }
+}
+
+/** "+" on a calendar day: a one-line box for a task due that day. */
+function DayAdd({ onAdd, onClose }: { onAdd: (title: string) => Promise<string | null>; onClose: () => void }) {
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!title.trim() || busy) return;
+        setBusy(true);
+        const err = await onAdd(title.trim());
+        setBusy(false);
+        if (err) setError(err);
+        else onClose();
+      }}
+    >
+      <input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+        onBlur={() => !title.trim() && onClose()}
+        placeholder="New task…"
+        disabled={busy}
+        maxLength={300}
+        className="w-full rounded-md border border-accent bg-surface px-1.5 py-0.5 text-xs"
+      />
+      {error && <p className="text-[11px] text-danger">{error}</p>}
+    </form>
   );
 }
 
@@ -783,6 +1085,8 @@ function TaskMenu({
   dates,
   onEdit,
   onAssign,
+  onAssigned,
+  appUrl,
   onClose,
   openHref,
 }: {
@@ -792,6 +1096,8 @@ function TaskMenu({
   dates: { today: string; tomorrow: string; nextWeek: string };
   onEdit: (patch: Patch) => void;
   onAssign: (person: Person, on: boolean) => void;
+  onAssigned: () => void;
+  appUrl: string;
   onClose: () => void;
   openHref: string;
 }) {
@@ -822,9 +1128,9 @@ function TaskMenu({
 
   return (
     <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-[70] max-h-[85vh] w-[264px] space-y-3 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
-      {people.length > 0 && (
-        <div className="space-y-1.5">
-          <p className={label}>Assigned to</p>
+      <div className="space-y-1.5">
+        <p className={label}>Assigned to</p>
+        {people.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {people.map((p) => {
               const on = (task.assignee_ids ?? []).includes(p.id);
@@ -851,8 +1157,9 @@ function TaskMenu({
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+        <AssignByEmail taskId={task.id} appUrl={appUrl} onAssigned={onAssigned} />
+      </div>
       <div className="space-y-1.5">
         <p className={label}>Due date</p>
         <div className="flex flex-wrap gap-1">
@@ -992,5 +1299,184 @@ function AddTask({ projects, initialProject, onAdded }: { projects: Project[]; i
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
     </form>
+  );
+}
+
+/** Shows an invite link with Copy and WhatsApp buttons. */
+function InviteLink({ appUrl, token, email }: { appUrl: string; token: string; email: string }) {
+  const link = `${appUrl.replace(/\/$/, "")}/join/${token}`;
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-1 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+      <p>
+        <b>{email}</b> is not in SS Tasks yet. Send them this link — it is theirs as soon as they join:
+      </p>
+      <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="w-full rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg" />
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(link);
+              setCopied(true);
+            } catch {}
+          }}
+          className="rounded-md bg-accent px-2 py-0.5 font-medium text-white"
+        >
+          {copied ? "Copied ✓" : "Copy link"}
+        </button>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(`You've been added to SS Tasks. Join here: ${link}`)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-md border border-line px-2 py-0.5 text-fg hover:bg-surface"
+        >
+          WhatsApp
+        </a>
+      </div>
+    </div>
+  );
+}
+
+type Msg = { ok: string } | { error: string } | { invite: { token: string; email: string } } | null;
+
+/** "Assign by email" inside the task menu. */
+function AssignByEmail({ taskId, appUrl, onAssigned }: { taskId: string; appUrl: string; onAssigned: () => void }) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await assignTaskByEmail(taskId, email);
+    setBusy(false);
+    if (!res.ok) return setMsg({ error: res.error });
+    if (res.data.status === "assigned") {
+      setMsg({ ok: `Assigned to ${res.data.name}${res.data.added ? " (added to this project)" : ""}.` });
+      setEmail("");
+    } else setMsg({ invite: { token: res.data.token, email: res.data.email } });
+    onAssigned();
+  }
+  return (
+    <div className="space-y-1.5">
+      <form onSubmit={submit} className="flex gap-1">
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Assign by email…" className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-xs" />
+        <button type="submit" disabled={busy || !email.trim()} className="rounded-lg bg-accent px-2 text-xs font-medium text-white disabled:opacity-50">
+          {busy ? "…" : "Assign"}
+        </button>
+      </form>
+      {msg && "ok" in msg && <p className="text-xs text-up">{msg.ok}</p>}
+      {msg && "error" in msg && <p className="text-xs text-danger">{msg.error}</p>}
+      {msg && "invite" in msg && <InviteLink appUrl={appUrl} token={msg.invite.token} email={msg.invite.email} />}
+    </div>
+  );
+}
+
+const PROJECT_COLORS = ["#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#f59e0b", "#22c55e", "#14b8a6", "#64748b"];
+
+/** "+ Project": name, workspace and colour. */
+function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [ws, setWs] = useState(workspaces[0]?.id ?? "");
+  const [color, setColor] = useState(PROJECT_COLORS[0]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!name.trim() || busy) return;
+        setBusy(true);
+        setError(null);
+        const res = await addSsProject(ws, name, color);
+        setBusy(false);
+        if (!res.ok) return setError(res.error);
+        onDone();
+      }}
+      className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-2"
+    >
+      <div className="flex flex-wrap gap-2">
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="New project name…" maxLength={120} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
+        <select value={ws} onChange={(e) => setWs(e.target.value)} aria-label="Workspace" className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm">
+          {workspaces.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {PROJECT_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setColor(c)}
+            aria-label={`Colour ${c}`}
+            aria-pressed={color === c}
+            className={`size-6 rounded-full ${color === c ? "ring-2 ring-fg ring-offset-2 ring-offset-surface" : ""}`}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+        <button type="submit" disabled={busy || !name.trim()} className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+          {busy ? "Creating…" : "Create project"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </form>
+  );
+}
+
+/** "Share": give someone access to a project by email (or an invite link). */
+function ShareProject({ projects, appUrl, onChanged }: { projects: Project[]; appUrl: string; onChanged: () => void }) {
+  const [project, setProject] = useState(projects[0]?.id ?? "");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  const workspaces = [...new Set(projects.map((p) => p.workspace))];
+  const people = projects.find((p) => p.id === project)?.people ?? [];
+  return (
+    <div className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-2">
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!email.trim() || busy) return;
+          setBusy(true);
+          setMsg(null);
+          const res = await shareProject(project, email);
+          setBusy(false);
+          if (!res.ok) return setMsg({ error: res.error });
+          if (res.data.status === "added") {
+            setMsg({ ok: `${res.data.name} can now see this project.` });
+            setEmail("");
+          } else setMsg({ invite: { token: res.data.token, email: res.data.email } });
+          onChanged();
+        }}
+        className="flex flex-wrap gap-2"
+      >
+        <select value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project" className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm">
+          {workspaces.map((w) => (
+            <optgroup key={w} label={w}>
+              {projects
+                .filter((p) => p.workspace === w)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email to share with…" className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
+        <button type="submit" disabled={busy || !email.trim()} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+          {busy ? "Sharing…" : "Share"}
+        </button>
+      </form>
+      {people.length > 0 && <p className="text-xs text-muted">On this project: {people.map((p) => p.name).join(", ")}</p>}
+      {msg && "ok" in msg && <p className="text-xs text-up">{msg.ok}</p>}
+      {msg && "error" in msg && <p className="text-xs text-danger">{msg.error}</p>}
+      {msg && "invite" in msg && <InviteLink appUrl={appUrl} token={msg.invite.token} email={msg.invite.email} />}
+    </div>
   );
 }

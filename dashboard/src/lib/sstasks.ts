@@ -89,3 +89,43 @@ export async function assignSsTask(id: string, user: string, on: boolean) {
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
 }
+
+export type AssignByEmailResult = { status: "assigned"; name: string; added?: boolean } | { status: "invited"; email: string; token: string };
+
+/** Assigns by email: someone in SS Tasks gets it now; anyone else gets a project invite and the task waits for them. */
+export async function assignSsTaskByEmail(id: string, email: string): Promise<AssignByEmailResult> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_assign_email", { p_key: dashboardKey(), p_task: id, p_email: email })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as AssignByEmailResult;
+}
+
+export type SsWorkspace = { id: string; name: string; color: string | null };
+
+export async function loadSsWorkspaces(): Promise<SsWorkspace[]> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_workspaces", { p_key: dashboardKey() })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) return [];
+  return (data as SsWorkspace[] | null) ?? [];
+}
+
+export async function createSsProject(workspace: string, name: string, color: string): Promise<string> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_create", { p_key: dashboardKey(), p_workspace: workspace, p_name: name, p_color: color })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+export type ShareResult = { status: "added"; name: string } | { status: "invited"; email: string; token: string };
+
+/** Shares a project by email: adds someone already in SS Tasks, or makes an invite link for anyone else. */
+export async function shareSsProject(project: string, email: string): Promise<ShareResult> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_share", { p_key: dashboardKey(), p_project: project, p_email: email })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as ShareResult;
+}
