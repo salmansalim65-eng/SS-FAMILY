@@ -54,6 +54,10 @@ export async function editSsTask(id: string, patch: SsTaskPatch): Promise<{ ok: 
       if (patch.due !== null && !/^\d{4}-\d{2}-\d{2}$/.test(patch.due)) throw new Error("Unknown date.");
       clean.due = patch.due;
     }
+    if (patch.time !== undefined) {
+      if (patch.time !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.time)) throw new Error("Unknown time.");
+      clean.time = patch.time ?? "";
+    }
     if (patch.priority !== undefined) {
       if (patch.priority && !PRIORITIES.includes(patch.priority)) throw new Error("Unknown priority.");
       clean.priority = patch.priority || null;
@@ -174,6 +178,10 @@ function cleanOp(op: SsTaskOp): SsTaskOp {
       if (op.due !== undefined) {
         if (!DATE_OR_EMPTY.test(String(op.due))) throw new Error("Unknown date.");
         out.due = String(op.due);
+      }
+      if (op.time !== undefined) {
+        if (!/^(([01]\d|2[0-3]):[0-5]\d)?$/.test(String(op.time))) throw new Error("Unknown time.");
+        out.time = String(op.time);
       }
       if (op.priority !== undefined) {
         if (op.priority && !PRIORITIES.includes(op.priority)) throw new Error("Unknown priority.");

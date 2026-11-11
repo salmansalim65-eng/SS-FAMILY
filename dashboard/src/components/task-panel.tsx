@@ -192,6 +192,24 @@ export function TaskPanel({
                 <span className={label}>Due</span>
                 <input type="date" value={d.due ?? ""} onChange={(e) => apply({ op: "set", due: e.target.value }, (x) => ({ ...x, due: e.target.value || null }))} className={field} />
               </div>
+              <div className="col-span-2 flex items-end gap-2">
+                <div className="flex-1">
+                  <span className={label}>Time (optional — shows in the week view's hours)</span>
+                  <input
+                    type="time"
+                    step={900}
+                    value={d.time ?? ""}
+                    disabled={!d.due}
+                    onChange={(e) => apply({ op: "set", time: e.target.value }, (x) => ({ ...x, time: e.target.value || null }))}
+                    className={`${field} disabled:opacity-50`}
+                  />
+                </div>
+                {d.time && (
+                  <button type="button" onClick={() => apply({ op: "set", time: "" }, (x) => ({ ...x, time: null }))} className="rounded-lg border border-line px-2.5 py-1.5 text-xs hover:bg-surface-2">
+                    All day
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
