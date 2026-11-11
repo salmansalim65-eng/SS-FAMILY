@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -253,6 +253,28 @@ export async function projectBoard(project: string): Promise<{ ok: true; data: S
     await requireOwner();
     if (!UUID.test(project)) throw new Error("Unknown project.");
     return { ok: true, data: await getSsProjectBoard(project) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+const BUCKET_ACTIONS: SsBucketAction[] = ["add", "rename", "left", "right", "delete"];
+
+export async function editColumn(
+  project: string,
+  action: SsBucketAction,
+  bucket: string | null,
+  name: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project)) throw new Error("Unknown project.");
+    if (!BUCKET_ACTIONS.includes(action)) throw new Error("Unknown change.");
+    if (action !== "add" && !UUID.test(String(bucket))) throw new Error("Unknown column.");
+    const n = name == null ? null : String(name).trim().slice(0, 80);
+    if ((action === "add" || action === "rename") && !n) throw new Error("Give the column a name.");
+    await editSsBucket(project, action, action === "add" ? null : bucket, n);
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
   }
