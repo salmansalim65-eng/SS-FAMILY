@@ -1,6 +1,6 @@
 "use server";
 
-import { assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskPatch } from "@/lib/sstasks";
+import { assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -117,6 +117,28 @@ export async function shareProject(project: string, email: string): Promise<{ ok
     const e = String(email).trim().toLowerCase().slice(0, 200);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error("That email address does not look right.");
     return { ok: true, data: await shareSsProject(project, e) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function removeTask(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id)) throw new Error("Unknown task.");
+    await deleteSsTask(id);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function removeProject(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id)) throw new Error("Unknown project.");
+    await deleteSsProject(id);
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
   }
