@@ -22,6 +22,7 @@ export type SsTask = {
   assignees: string[];
   checks: number;
   checked: number;
+  bucket: string | null;
 };
 
 const TIMEOUT_MS = 12_000;
@@ -68,4 +69,14 @@ export async function createSsTask(project: string, title: string, due: string |
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+export type SsTaskPatch = { title?: string; due?: string | null; priority?: string | null; project?: string; bucket?: string };
+
+/** Moves or edits a task (due date, priority, project, column), as SS. */
+export async function updateSsTask(id: string, patch: SsTaskPatch) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_update", { p_key: dashboardKey(), p_task: id, p_patch: patch })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
 }
