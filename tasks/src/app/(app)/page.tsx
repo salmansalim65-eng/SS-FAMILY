@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAppData } from "@/components/data";
+import { projectPeople, useAppData } from "@/components/data";
 import { TASK_SELECT, TaskCard } from "@/components/task-card";
 import { TaskDrawer } from "@/components/task-drawer";
 import { addDaysKey, todayKey } from "@/lib/dates";
@@ -13,7 +13,8 @@ type Layout = "board" | "due";
 
 /** Every task given to me (or that I gave), across all workspaces, by when it's due. */
 export default function MyTasks() {
-  const { me, projects, workspaces, members, people } = useAppData();
+  const data = useAppData();
+  const { me, projects, workspaces } = data;
   const [view, setView] = useState<View>("mine");
   // Board (a column per project) by default; "?layout=due" or the toggle shows the due-date list.
   const [layout, setLayout] = useState<Layout>("board");
@@ -109,13 +110,7 @@ export default function MyTasks() {
     await supabase().from("tasks").update({ done: !t.done }).eq("id", t.id);
   }
 
-  const assignable = (projectId: string): Profile[] => {
-    const p = projects.find((x) => x.id === projectId);
-    return members
-      .filter((m) => m.workspace_id === p?.workspace_id && m.role !== "guest")
-      .map((m) => people.get(m.user_id))
-      .filter((x): x is Profile => !!x);
-  };
+  const assignable = (projectId: string): Profile[] => projectPeople(data, projectId);
 
   return (
     <div className="space-y-5">

@@ -11,9 +11,9 @@ type ProjectMember = { project_id: string; user_id: string };
 
 const ROLE_HINT: Record<Role, string> = {
   owner: "Owns the workspace",
-  admin: "Manages people and every project",
-  member: "Sees and works on every project",
-  guest: "Sees only the projects they're added to",
+  admin: "Manages people and sees every project",
+  member: "Opens only the projects they're added to (like Teams channels)",
+  guest: "Someone from outside — only the projects they're added to",
 };
 
 function Members() {
@@ -29,7 +29,7 @@ function Members() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>(preselect ? "guest" : "member");
+  const [role, setRole] = useState<Role>("member");
   const [project, setProject] = useState(preselect ?? "");
   const [made, setMade] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +59,11 @@ function Members() {
     const clean = email.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(clean)) return setError("Enter a valid email.");
     if (role === "guest" && !project) return setError("Pick the project the guest joins.");
+    // A member can be invited straight into a project too; they join the workspace and that project.
     const row: Record<string, string | undefined> =
-      role === "guest" ? { project_id: project, email: clean, role, invited_by: me?.id } : { workspace_id: ws, email: clean, role, invited_by: me?.id };
+      role === "guest"
+        ? { project_id: project, email: clean, role, invited_by: me?.id }
+        : { workspace_id: ws, project_id: role === "member" && project ? project : undefined, email: clean, role, invited_by: me?.id };
     const { data, error } = await supabase().from("invitations").insert(row).select("token").single();
     if (error) return setError(error.message);
     const link = linkFor(data.token as string);
@@ -123,9 +126,9 @@ function Members() {
               {canManage && <option value="admin">Admin</option>}
               <option value="guest">Guest (one project)</option>
             </select>
-            {role === "guest" && (
+            {role !== "admin" && (
               <select value={project} onChange={(e) => setProject(e.target.value)} className="rounded-xl border border-line bg-surface px-2 py-2 text-sm">
-                <option value="">Project…</option>
+                <option value="">{role === "guest" ? "Project…" : "No project yet"}</option>
                 {wsProjects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -163,19 +166,21 @@ function Members() {
                     {p?.full_name} {m.user_id === me?.id && <span className="text-muted">(you)</span>}
                   </p>
                   <p className="truncate text-xs text-muted">{p?.email}</p>
-                  {m.role === "guest" && (
+                  {(m.role === "owner" || m.role === "admin") && <p className="mt-1 text-[11px] text-muted">All projects</p>}
+                  {(m.role === "member" || m.role === "guest") && (
                     <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {theirProjects.length === 0 && <span className="text-[11px] text-muted">No projects yet</span>}
                       {theirProjects.map((x) => (
                         <span key={x.project_id} className="flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px]">
                           {wsProjects.find((w) => w.id === x.project_id)?.name}
-                          {canInviteGuest && (
+                          {canManage && (
                             <button type="button" onClick={() => removeFromProject(m.user_id, x.project_id)} aria-label="Remove from project" className="text-muted hover:text-danger">
                               ✕
                             </button>
                           )}
                         </span>
                       ))}
-                      {canInviteGuest && (
+                      {canManage && (
                         <select value="" onChange={(e) => addToProject(m.user_id, e.target.value)} className="rounded-full border border-line bg-surface px-1.5 py-0.5 text-[11px]">
                           <option value="">＋ project</option>
                           {wsProjects
