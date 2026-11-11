@@ -3,7 +3,7 @@ export type Priority = "urgent" | "important" | "medium" | "low";
 
 export type Profile = { id: string; email: string; full_name: string; color: string };
 export type Workspace = { id: string; name: string; color: string; role?: Role };
-export type Project = { id: string; workspace_id: string; name: string; description: string; color: string; archived: boolean };
+export type Project = { id: string; workspace_id: string; name: string; description: string; color: string; archived: boolean; created_by: string | null };
 export type Bucket = { id: string; project_id: string; name: string; position: number };
 export type Task = {
   id: string;
