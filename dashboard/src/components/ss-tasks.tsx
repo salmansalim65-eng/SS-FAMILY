@@ -702,9 +702,6 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             👥 Share
           </button>
         )}
-        <a href={appUrl} className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open the Task Hub app here">
-          Open ↗
-        </a>
         <button
           type="button"
           onClick={() => setFull((f) => !f)}
