@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ProjectBoard } from "@/components/project-board";
 import { TaskPanel } from "@/components/task-panel";
 import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, projectMembers, removeProject, removeTask, setProjectMember, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
@@ -143,6 +144,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null); // the task panel
   const [membersOf, setMembersOf] = useState<string | null>(null); // the project members panel
+  const [boardOf, setBoardOf] = useState<string | null>(null); // a project's Planner board
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -576,9 +578,9 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         )}
         {prefs.tab === "by_me" && t.assignees.length > 0 && !compact && <span className="truncate">→ {t.assignees.join(", ")}</span>}
         {t.assignees.length > 0 && (compact || prefs.tab !== "by_me") && (
-          <span className="ml-auto flex -space-x-1.5" title={`Assigned to ${t.assignees.join(", ")}`}>
+          <span className="ml-auto flex -space-x-1" title={`Assigned to ${t.assignees.join(", ")}`}>
             {t.assignees.slice(0, 3).map((name) => (
-              <span key={name} className="grid size-5 place-items-center rounded-full border border-surface bg-accent/15 text-[9px] font-semibold text-accent">
+              <span key={name} className="grid size-[22px] place-items-center rounded-full border-2 border-surface bg-accent/15 text-[9px] font-semibold text-accent">
                 {initialsOf(name)}
               </span>
             ))}
@@ -779,6 +781,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             />
           );
         })()}
+      {boardOf && (
+        <ProjectBoard
+          projectId={boardOf}
+          projects={projects}
+          appUrl={appUrl}
+          onClose={() => setBoardOf(null)}
+          onChanged={() => load(true)}
+          onMembers={() => setMembersOf(boardOf)}
+        />
+      )}
       {membersOf && (
         <MembersPanel
           project={projects.find((p) => p.id === membersOf) ?? null}
@@ -901,6 +913,16 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     <span className="rounded-full bg-surface/80 px-1.5 text-muted">{g.tasks.length}</span>
                   </span>
                 </button>
+                {prefs.groupBy === "project" && (
+                  <button
+                    type="button"
+                    onClick={() => setBoardOf(g.key)}
+                    title={`Open the ${g.label} board`}
+                    className="rounded px-1.5 text-xs text-muted hover:bg-surface/80 hover:text-accent"
+                  >
+                    ▦ Board
+                  </button>
+                )}
                 {membersBtn(g)}
                   {delProjectBtn(g)}
                 </div>
@@ -947,7 +969,18 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   <button type="button" onClick={() => toggleFold(g.key)} title="Collapse" className="text-xs text-muted hover:text-fg">
                     ◂
                   </button>
-                  <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
+                  {prefs.groupBy === "project" ? (
+                    <button
+                      type="button"
+                      onClick={() => setBoardOf(g.key)}
+                      title={`Open the ${g.label} board`}
+                      className="min-w-0 truncate text-left text-sm font-semibold hover:text-accent hover:underline"
+                    >
+                      {g.label}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 truncate text-sm font-semibold">{g.label}</span>
+                  )}
                   {lateCount(g.tasks) > 0 && <span className="rounded-full bg-red-600 px-1.5 text-xs text-white">{lateCount(g.tasks)}</span>}
                   <span className="ml-auto rounded-full bg-surface/80 px-1.5 text-xs text-muted">{g.tasks.length}</span>
                   {membersBtn(g)}
