@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Avatar, useAppData } from "@/components/data";
+import { NewProjectDialog } from "@/components/new-project";
 import { supabase } from "@/lib/supabase/client";
-import { COLORS } from "@/lib/types";
 
 /** A workspace (company): its projects, with open / late counts, and its people. */
 export default function WorkspacePage() {
   const { ws } = useParams<{ ws: string }>();
-  const router = useRouter();
   const { workspaces, projects, members, people, reload } = useAppData();
   const workspace = workspaces.find((w) => w.id === ws);
   const list = projects.filter((p) => p.workspace_id === ws);
@@ -37,18 +36,8 @@ export default function WorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.map((p) => p.id).join()]);
 
-  async function newProject() {
-    const name = prompt("Project name");
-    if (!name?.trim()) return;
-    const { data, error } = await supabase()
-      .from("projects")
-      .insert({ workspace_id: ws, name: name.trim(), color: COLORS[list.length % COLORS.length] })
-      .select("id")
-      .single();
-    if (error) return alert(error.message);
-    await reload();
-    router.push(`/p/${data.id}`);
-  }
+  const [creating, setCreating] = useState(false);
+  const newProject = () => setCreating(true);
 
   async function rename() {
     const name = prompt("Workspace name", workspace?.name);
@@ -105,6 +94,7 @@ export default function WorkspacePage() {
           </button>
         )}
       </div>
+      {creating && <NewProjectDialog workspaceId={ws} onClose={() => setCreating(false)} />}
     </div>
   );
 }
