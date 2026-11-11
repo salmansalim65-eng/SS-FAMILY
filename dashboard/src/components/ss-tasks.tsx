@@ -645,7 +645,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             👥 Share
           </button>
         )}
-        <a href={appUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open Task Hub">
+        <a href={appUrl} className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open the Task Hub app here">
           Open ↗
         </a>
         <button
@@ -667,6 +667,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             setFresh((f) => [...f, id]);
             load(true);
           }}
+          onCancel={() => setPanel(null)}
         />
       )}
       {panel === "share" && <ShareProject projects={projects} appUrl={appUrl} onChanged={() => load(true)} />}
@@ -1477,7 +1478,7 @@ function AssignByEmail({ taskId, appUrl, onAssigned }: { taskId: string; appUrl:
 const PROJECT_COLORS = ["#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#f59e0b", "#22c55e", "#14b8a6", "#64748b"];
 
 /** "+ Project": name, workspace and colour. */
-function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: (id: string) => void }) {
+function NewProject({ workspaces, onDone, onCancel }: { workspaces: Workspace[]; onDone: (id: string) => void; onCancel: () => void }) {
   const [name, setName] = useState("");
   const [ws, setWs] = useState(workspaces[0]?.id ?? "");
   const [color, setColor] = useState(PROJECT_COLORS[0]);
@@ -1498,7 +1499,7 @@ function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: (
       className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-2"
     >
       <div className="flex flex-wrap gap-2">
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="New project name…" maxLength={120} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onCancel()} placeholder="New project name…" maxLength={120} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
         <select value={ws} onChange={(e) => setWs(e.target.value)} aria-label="Workspace" className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm">
           {workspaces.map((w) => (
             <option key={w.id} value={w.id}>
@@ -1519,7 +1520,10 @@ function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: (
             style={{ backgroundColor: c }}
           />
         ))}
-        <button type="submit" disabled={busy || !name.trim()} className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+        <button type="button" onClick={onCancel} className="ml-auto rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface-2">
+          Cancel
+        </button>
+        <button type="submit" disabled={busy || !name.trim()} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
           {busy ? "Creating…" : "Create project"}
         </button>
       </div>

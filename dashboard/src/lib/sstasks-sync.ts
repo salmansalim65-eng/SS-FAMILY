@@ -179,7 +179,8 @@ export async function syncSsTasksWithGoogle(db: SupabaseClient, minSeconds = 60)
       const link = t.link;
       if (!link) {
         if (t.done) return;
-        const list = listOfProject.get(t.project_id) ?? inboxId;
+        const mapped = listOfProject.get(t.project_id);
+        const list = mapped && liveLists.has(mapped) ? mapped : inboxId; // a deleted Google list falls back to the inbox
         const created = await g<GTask>(token, `/lists/${encodeURIComponent(list)}/tasks`, { method: "POST", body: body(t) });
         ops.push({ op: "link", task_id: t.id, google_list: list, google_task: created.id, done: false });
         result.pushed++;
@@ -236,6 +237,11 @@ export async function syncSsTasksWithGoogle(db: SupabaseClient, minSeconds = 60)
         ops.push({ op: "link", task_id: t.id, google_list: link.google_list, google_task: link.google_task, done });
       }
     } catch (e) {
+      // Gone from Google in the meantime (task or its list deleted): stop copying it, no error.
+      if (e instanceof NotFound) {
+        if (t.link) ops.push({ op: "gone", task_id: t.id });
+        return;
+      }
       result.errors.push(e instanceof Error ? e.message : String(e));
     }
   });
