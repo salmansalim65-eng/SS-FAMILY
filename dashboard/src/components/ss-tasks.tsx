@@ -487,8 +487,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             setMenu((m) => (m?.id === t.id ? null : { id: t.id, rect }));
           }}
           aria-label="Task options"
-          title="Due date, priority, progress, move"
-          className={`shrink-0 rounded-md px-1.5 text-base leading-6 text-muted hover:bg-line/60 hover:text-fg ${menu?.id === t.id ? "bg-line/60 text-fg" : "opacity-60 group-hover:opacity-100"}`}
+          title="Assign, move to project, due date, priority, progress"
+          className={`shrink-0 rounded-md border border-line bg-surface px-1.5 text-base font-bold leading-6 text-fg shadow-sm hover:border-accent hover:text-accent ${menu?.id === t.id ? "border-accent text-accent" : ""}`}
         >
           ⋯
         </button>
