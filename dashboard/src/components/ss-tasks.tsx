@@ -314,7 +314,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   async function deleteProject(g: Group) {
     const n = g.tasks.length;
     const typed = prompt(
-      `Delete the project "${g.label}"${g.sub ? ` (${g.sub})` : ""} for good?\n\nIt and all its tasks are deleted for everyone${n ? ` (${n} open task${n === 1 ? "" : "s"} here)` : ""}. This cannot be undone.\n\nType the project name to confirm:`,
+      `Delete the project "${g.label}"${g.sub ? ` (${g.sub})` : ""} for good?\n\nIt and all its tasks are deleted for everyone${n ? ` (${n} open task${n === 1 ? "" : "s"} here)` : ""}. This cannot be undone.\n\nPress OK to delete (the name is filled in for you):`,
+      g.label,
     );
     if (typed === null) return;
     if (typed.trim() !== g.label.trim()) return setError("The name didn't match, so nothing was deleted.");
