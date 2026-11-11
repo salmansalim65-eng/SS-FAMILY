@@ -392,7 +392,8 @@ function ProjectSettings({
 
   async function remove() {
     const typed = prompt(
-      `Delete "${project!.name}" for good?\n\nIts ${taskCount} task${taskCount === 1 ? "" : "s"}, columns, checklists and comments are deleted too. This cannot be undone.\n\nType the project name to confirm:`,
+      `Delete "${project!.name}" for good?\n\nIts ${taskCount} task${taskCount === 1 ? "" : "s"}, columns, checklists and comments are deleted too. This cannot be undone.\n\nPress OK to delete (the name is filled in for you):`,
+      project!.name,
     );
     if (typed === null) return;
     if (typed.trim() !== project!.name.trim())
