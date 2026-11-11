@@ -70,7 +70,7 @@ export function Bell({ userId }: { userId: string }) {
               {items.map((n) => (
                 <li key={n.id} className={n.read_at ? "" : "bg-accent/5"}>
                   <Link
-                    href={n.project_id ? `/p/${n.project_id}${n.task_id ? `?task=${n.task_id}` : ""}` : "/"}
+                    href={n.link ? n.link : n.project_id ? `/p/${n.project_id}${n.task_id ? `?task=${n.task_id}` : ""}` : "/"}
                     onClick={() => {
                       markOne(n.id);
                       setOpen(false);

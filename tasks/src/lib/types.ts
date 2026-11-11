@@ -2,7 +2,7 @@ export type Role = "owner" | "admin" | "member" | "guest";
 export type Priority = "urgent" | "important" | "medium" | "low";
 
 export type Profile = { id: string; email: string; full_name: string; color: string };
-export type Workspace = { id: string; name: string; color: string; role?: Role };
+export type Workspace = { id: string; name: string; color: string; role?: Role; mudeer_id?: string | null };
 export type Project = { id: string; workspace_id: string; name: string; description: string; color: string; archived: boolean; created_by: string | null };
 export type Bucket = { id: string; project_id: string; name: string; position: number };
 export type Task = {
@@ -19,6 +19,7 @@ export type Task = {
   position: number;
   created_by: string;
   created_at: string;
+  postponed_count?: number;
   task_assignees?: { user_id: string }[];
   checklist_items?: { id: string; done: boolean }[];
 };
@@ -31,6 +32,7 @@ export type Notification = {
   body: string;
   project_id: string | null;
   task_id: string | null;
+  link?: string | null;
   read_at: string | null;
   created_at: string;
 };

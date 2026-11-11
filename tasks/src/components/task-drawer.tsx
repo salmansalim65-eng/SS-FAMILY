@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ago } from "@/lib/dates";
+import { ago, dmy } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 import { PRIORITIES, type Bucket, type ChecklistItem, type Comment, type Priority, type Profile, type Task } from "@/lib/types";
 import { Attachments } from "./attachments";
@@ -30,21 +30,24 @@ export function TaskDrawer({
   const [task, setTask] = useState<Task | null>(null);
   const [checks, setChecks] = useState<ChecklistItem[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [moves, setMoves] = useState<{ id: string; old_due: string; new_due: string | null; reason: string; changed_by: string | null; created_at: string }[]>([]);
   const [newCheck, setNewCheck] = useState("");
   const [newComment, setNewComment] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const sb = supabase();
-    const [t, c, m] = await Promise.all([
+    const [t, c, m, d] = await Promise.all([
       sb.from("tasks").select("*, task_assignees(user_id)").eq("id", taskId).maybeSingle(),
       sb.from("checklist_items").select("*").eq("task_id", taskId).order("position"),
       sb.from("comments").select("*").eq("task_id", taskId).order("created_at"),
+      sb.from("task_due_changes").select("*").eq("task_id", taskId).order("created_at", { ascending: false }),
     ]);
     if (!t.data) return setError("This task is gone or you can't see it.");
     setTask(t.data as Task);
     setChecks((c.data ?? []) as ChecklistItem[]);
     setComments((m.data ?? []) as Comment[]);
+    setMoves(d.data ?? []);
   }, [taskId]);
 
   useEffect(() => {
@@ -59,6 +62,25 @@ export function TaskDrawer({
     setTask({ ...task, ...patch });
     const { error } = await supabase().from("tasks").update(patch).eq("id", task.id);
     if (error) setError(error.message);
+    onChanged();
+  }
+
+  /** A later (or cleared) due date on an open task is a postponement: it needs a reason. */
+  async function changeDue(value: string) {
+    if (!task) return;
+    const next = value || null;
+    const postpone = !!task.due_date && !task.done && (next === null || next > task.due_date);
+    if (!postpone) return save({ due_date: next });
+    const reason = prompt(`Why is the due date moving from ${dmy(task.due_date!)} to ${next ? dmy(next) : "no date"}?\n(The project owner sees this reason.)`);
+    if (reason === null) return setTask({ ...task });
+    if (!reason.trim()) {
+      setError("Write a reason to move the due date later.");
+      return setTask({ ...task });
+    }
+    setError(null);
+    const { error } = await supabase().rpc("postpone_task", { p_task: task.id, p_due: next, p_reason: reason.trim() });
+    if (error) return setError(error.message);
+    await load();
     onChanged();
   }
 
@@ -203,9 +225,28 @@ export function TaskDrawer({
               </label>
               <label className="space-y-1">
                 <span className="text-xs text-muted">Due</span>
-                <input type="date" value={task.due_date ?? ""} onChange={(e) => save({ due_date: e.target.value || null })} className={field} />
+                <input type="date" value={task.due_date ?? ""} onChange={(e) => changeDue(e.target.value)} className={field} />
               </label>
             </div>
+
+            {moves.length > 0 && (
+              <details className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                <summary className="cursor-pointer font-medium">
+                  ↪ Due date moved {moves.length}× · latest: {moves[0].reason || "no reason given"}
+                </summary>
+                <ul className="mt-1.5 space-y-1">
+                  {moves.map((m) => (
+                    <li key={m.id}>
+                      {dmy(m.old_due)} → {m.new_due ? dmy(m.new_due) : "no date"} · {m.reason || "no reason given"}
+                      <span className="text-amber-700/80 dark:text-amber-300/70">
+                        {" "}
+                        — {people.get(m.changed_by ?? "")?.full_name || "Someone"}, {ago(m.created_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
 
             <div className="space-y-1.5">
               <p className="text-xs text-muted">Assigned to</p>

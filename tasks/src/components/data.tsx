@@ -35,7 +35,7 @@ export function AppDataProvider({ userId, children }: { userId: string; children
   const reload = useCallback(async () => {
     const sb = supabase();
     const [ws, members, projects, people, pm] = await Promise.all([
-      sb.from("workspaces").select("id, name, color").order("name"),
+      sb.from("workspaces").select("id, name, color, mudeer_id").order("name"),
       sb.from("workspace_members").select("workspace_id, user_id, role"),
       sb.from("projects").select("*").eq("archived", false).order("name"),
       sb.from("profiles").select("id, email, full_name, color"),
