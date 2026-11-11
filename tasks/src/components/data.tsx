@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import type { Profile, Project, Role, Workspace } from "@/lib/types";
 
 type Member = { workspace_id: string; user_id: string; role: Role };
-export type ProjectMember = { project_id: string; user_id: string };
+export type ProjectMember = { project_id: string; user_id: string; role: "owner" | "member" };
 type AppData = {
   me: Profile | null;
   workspaces: Workspace[];
@@ -39,7 +39,7 @@ export function AppDataProvider({ userId, children }: { userId: string; children
       sb.from("workspace_members").select("workspace_id, user_id, role"),
       sb.from("projects").select("*").eq("archived", false).order("name"),
       sb.from("profiles").select("id, email, full_name, color"),
-      sb.from("project_members").select("project_id, user_id"),
+      sb.from("project_members").select("project_id, user_id, role"),
     ]);
     const mem = (members.data ?? []) as Member[];
     const peopleMap = new Map(((people.data ?? []) as Profile[]).map((p) => [p.id, p]));
@@ -63,14 +63,14 @@ export function AppDataProvider({ userId, children }: { userId: string; children
 
 /**
  * The people who can open a project, and so can be given its tasks: the
- * workspace's owners and admins, plus everyone added to the project.
+ * people added to it (projects are private, like Teams channels).
  */
 export function projectPeople(data: Pick<AppData, "projects" | "members" | "projectMembers" | "people">, projectId: string): Profile[] {
   const project = data.projects.find((p) => p.id === projectId);
   if (!project) return [];
   const added = new Set(data.projectMembers.filter((x) => x.project_id === projectId).map((x) => x.user_id));
   return data.members
-    .filter((m) => m.workspace_id === project.workspace_id && (m.role === "owner" || m.role === "admin" || added.has(m.user_id)))
+    .filter((m) => m.workspace_id === project.workspace_id && added.has(m.user_id))
     .map((m) => data.people.get(m.user_id))
     .filter((p): p is Profile => !!p)
     .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));

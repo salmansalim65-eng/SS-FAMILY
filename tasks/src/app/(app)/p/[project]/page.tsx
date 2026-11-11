@@ -69,10 +69,22 @@ function Board() {
     () => projectPeople(data, projectId),
     [data, projectId],
   );
+  // Project owners manage the project (people, settings, delete).
   const canManagePeople =
-    workspace?.role === "owner" ||
-    workspace?.role === "admin" ||
-    (!!me && project?.created_by === me.id);
+    !!me &&
+    data.projectMembers.some(
+      (x) => x.project_id === projectId && x.user_id === me.id && x.role === "owner",
+    );
+  const [takeover, setTakeover] = useState<{ user_id: string; created_at: string } | null>(null);
+  useEffect(() => {
+    supabase()
+      .from("project_takeovers")
+      .select("user_id, created_at")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data: rows }) => setTakeover((rows?.[0] as { user_id: string; created_at: string } | undefined) ?? null));
+  }, [projectId]);
 
   const doneBucket = buckets.find((b) => b.name.toLowerCase() === "done");
 
@@ -219,6 +231,12 @@ function Board() {
       {error && (
         <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
+        </p>
+      )}
+      {takeover && (
+        <p className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+          🛡 {data.people.get(takeover.user_id)?.full_name || "The workspace owner"} took ownership of this project on{" "}
+          {new Date(takeover.created_at).toLocaleDateString("en-GB")}.
         </p>
       )}
       <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
@@ -573,16 +591,21 @@ function ProjectPeople({
   );
   const name = (id: string) =>
     people.get(id)?.full_name || people.get(id)?.email || "Someone";
+  const owners = new Set(
+    projectMembers
+      .filter((x) => x.project_id === projectId && x.role === "owner")
+      .map((x) => x.user_id),
+  );
   const inProject = team
-    .filter(
-      (m) => m.role === "owner" || m.role === "admin" || added.has(m.user_id),
-    )
-    .sort((a, b) => name(a.user_id).localeCompare(name(b.user_id)));
+    .filter((m) => added.has(m.user_id))
+    .sort(
+      (a, b) =>
+        Number(owners.has(b.user_id)) - Number(owners.has(a.user_id)) ||
+        name(a.user_id).localeCompare(name(b.user_id)),
+    );
   const needle = q.trim().toLowerCase();
   const others = team
-    .filter(
-      (m) => m.role !== "owner" && m.role !== "admin" && !added.has(m.user_id),
-    )
+    .filter((m) => !added.has(m.user_id))
     .filter(
       (m) =>
         !needle ||
@@ -591,6 +614,21 @@ function ProjectPeople({
           .includes(needle),
     )
     .sort((a, b) => name(a.user_id).localeCompare(name(b.user_id)));
+
+  async function setOwner(userId: string, on: boolean) {
+    setBusy(true);
+    setError(null);
+    const { data: rows, error } = await supabase()
+      .from("project_members")
+      .update({ role: on ? "owner" : "member" })
+      .eq("project_id", projectId)
+      .eq("user_id", userId)
+      .select("user_id");
+    setBusy(false);
+    if (error) return setError(error.message);
+    if (!rows?.length) return setError("Only a project owner can change owners.");
+    reload();
+  }
 
   async function add(userId: string) {
     setBusy(true);
@@ -652,9 +690,9 @@ function ProjectPeople({
           </button>
         </div>
         <p className="text-xs text-muted">
-          Like a Teams channel: only the people here can open this project.
-          Owners and admins see every project. Each person sees only their own
-          tasks.
+          Private: only the people here can open this project (like a Teams
+          channel). Project owners manage it and see every task; everyone else
+          sees only their own tasks.
         </p>
         {error && (
           <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
@@ -681,34 +719,44 @@ function ProjectPeople({
                     {people.get(m.user_id)?.email}
                   </p>
                 </div>
-                {m.role === "owner" || m.role === "admin" ? (
-                  <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] capitalize text-muted">
-                    {m.role} · all projects
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1">
-                    {isOwner && (
-                      <button
-                        type="button"
-                        onClick={() => makeResetLink(m.user_id)}
-                        title="Make a one-time link to choose a new password"
-                        className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
-                      >
-                        🔑 Reset password
-                      </button>
-                    )}
-                    {canManage && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => remove(m.user_id)}
-                        className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-danger hover:text-danger"
-                      >
-                        Remove
-                      </button>
-                    )}
+                {owners.has(m.user_id) && (
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                    Project owner
                   </span>
                 )}
+                <span className="flex items-center gap-1">
+                  {isOwner && (m.role === "member" || m.role === "guest") && m.user_id !== me?.id && (
+                    <button
+                      type="button"
+                      onClick={() => makeResetLink(m.user_id)}
+                      title="Make a one-time link to choose a new password"
+                      aria-label={`Reset password for ${name(m.user_id)}`}
+                      className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
+                    >
+                      🔑
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setOwner(m.user_id, !owners.has(m.user_id))}
+                      className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
+                    >
+                      {owners.has(m.user_id) ? "Remove owner" : "Make owner"}
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => remove(m.user_id)}
+                      className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-danger hover:text-danger"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </span>
                 {resetLink?.userId === m.user_id && (
                   <div className="mt-1 flex w-full flex-wrap items-center gap-2 rounded-lg bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100">
                     <span>✓ Reset link copied (works once, 1 hour):</span>
