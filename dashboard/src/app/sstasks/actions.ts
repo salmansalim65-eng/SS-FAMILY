@@ -1,6 +1,6 @@
 "use server";
 
-import { assignSsTask, createSsTask, setSsTaskDone, updateSsTask, type SsTaskPatch } from "@/lib/sstasks";
+import { assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -79,5 +79,45 @@ export async function assignTask(id: string, user: string, on: boolean): Promise
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e instanceof Error && e.message) || "Something went wrong." };
+  }
+}
+
+/** Assigns a task by email (someone new gets an invite link and the task waits for them). */
+export async function assignTaskByEmail(id: string, email: string): Promise<{ ok: true; data: AssignByEmailResult } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id)) throw new Error("Unknown task.");
+    const e = String(email).trim().toLowerCase().slice(0, 200);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error("That email address does not look right.");
+    return { ok: true, data: await assignSsTaskByEmail(id, e) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+/** Adds a project to one of SS's workspaces in SS Tasks. */
+export async function addSsProject(workspace: string, name: string, color: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(workspace)) throw new Error("Pick a workspace.");
+    const n = name.trim().slice(0, 120);
+    if (!n) throw new Error("A project needs a name.");
+    if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Unknown colour.");
+    return { ok: true, id: await createSsProject(workspace, n, color) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+/** Shares an SS Tasks project with someone by email. */
+export async function shareProject(project: string, email: string): Promise<{ ok: true; data: ShareResult } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project)) throw new Error("Pick a project.");
+    const e = String(email).trim().toLowerCase().slice(0, 200);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error("That email address does not look right.");
+    return { ok: true, data: await shareSsProject(project, e) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
   }
 }
