@@ -50,3 +50,22 @@ export async function setSsTaskDone(id: string, done: boolean) {
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
 }
+
+export type SsProject = { id: string; name: string; color: string | null; workspace: string };
+
+/** The owner's projects, for "add task". Empty when SS Tasks doesn't have dashboard_projects yet. */
+export async function loadSsProjects(): Promise<SsProject[]> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_projects", { p_key: dashboardKey() })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) return [];
+  return (data as SsProject[] | null) ?? [];
+}
+
+export async function createSsTask(project: string, title: string, due: string | null, priority: string | null): Promise<string> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_create", { p_key: dashboardKey(), p_project: project, p_title: title, p_due: due, p_priority: priority })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as string;
+}
