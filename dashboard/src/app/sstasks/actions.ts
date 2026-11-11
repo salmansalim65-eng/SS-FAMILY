@@ -1,6 +1,6 @@
 "use server";
 
-import { assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsTaskDetail, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -138,6 +138,78 @@ export async function removeProject(id: string): Promise<{ ok: true } | { ok: fa
     await requireOwner();
     if (!UUID.test(id)) throw new Error("Unknown project.");
     await deleteSsProject(id);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function taskDetail(id: string): Promise<{ ok: true; detail: SsTaskDetail } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id)) throw new Error("Unknown task.");
+    return { ok: true, detail: await getSsTaskDetail(id) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+const DATE_OR_EMPTY = /^(\d{4}-\d{2}-\d{2})?$/;
+
+/** Checks one change from the task panel before it goes to Task Hub. */
+function cleanOp(op: SsTaskOp): SsTaskOp {
+  switch (op?.op) {
+    case "set": {
+      const out: SsTaskOp = { op: "set" };
+      if (op.title !== undefined) {
+        const t = String(op.title).trim().slice(0, 300);
+        if (!t) throw new Error("A task needs a title.");
+        out.title = t;
+      }
+      if (op.notes !== undefined) out.notes = String(op.notes).slice(0, 20000);
+      if (op.start !== undefined) {
+        if (!DATE_OR_EMPTY.test(String(op.start))) throw new Error("Unknown date.");
+        out.start = String(op.start);
+      }
+      if (op.due !== undefined) {
+        if (!DATE_OR_EMPTY.test(String(op.due))) throw new Error("Unknown date.");
+        out.due = String(op.due);
+      }
+      if (op.priority !== undefined) {
+        if (op.priority && !PRIORITIES.includes(op.priority)) throw new Error("Unknown priority.");
+        out.priority = op.priority || "";
+      }
+      if (op.bucket !== undefined) {
+        if (!UUID.test(String(op.bucket))) throw new Error("Unknown column.");
+        out.bucket = String(op.bucket);
+      }
+      if (op.done !== undefined) out.done = op.done === true;
+      return out;
+    }
+    case "check_add": {
+      const t = String(op.title ?? "").trim().slice(0, 300);
+      if (!t) throw new Error("Write the checklist item first.");
+      return { op: "check_add", title: t };
+    }
+    case "check_toggle":
+    case "check_delete":
+      if (!UUID.test(String(op.id))) throw new Error("Unknown checklist item.");
+      return { op: op.op, id: String(op.id) };
+    case "comment": {
+      const b = String(op.body ?? "").trim().slice(0, 4000);
+      if (!b) throw new Error("Write the comment first.");
+      return { op: "comment", body: b };
+    }
+    default:
+      throw new Error("Unknown change.");
+  }
+}
+
+export async function applyTask(id: string, op: SsTaskOp): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id)) throw new Error("Unknown task.");
+    await applySsTask(id, cleanOp(op));
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
