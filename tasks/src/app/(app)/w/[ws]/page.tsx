@@ -40,6 +40,30 @@ export default function WorkspacePage() {
   const newProject = () => setCreating(true);
 
   const router = useRouter();
+  type Hidden = { id: string; name: string; color: string; owners: string[] };
+  const [hidden, setHidden] = useState<Hidden[]>([]);
+  const isWsOwner = workspace?.role === "owner";
+  useEffect(() => {
+    if (!isWsOwner) return setHidden([]);
+    supabase()
+      .rpc("workspace_hidden_projects", { p_ws: ws })
+      .then(({ data }) => setHidden((data as Hidden[] | null) ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws, isWsOwner, list.length]);
+
+  // Safety for the workspace owner: become owner of a private project (recorded and shown in it).
+  async function takeOver(h: Hidden) {
+    if (
+      !confirm(
+        `Take over "${h.name}"?\n\nYou become an owner and can open it. This is recorded and shown inside the project${h.owners.length ? ` (owner now: ${h.owners.join(", ")})` : ""}.`,
+      )
+    )
+      return;
+    const { error } = await supabase().rpc("take_over_project", { p_project: h.id });
+    if (error) return alert(error.message);
+    await reload();
+    router.push(`/p/${h.id}`);
+  }
 
   // Only the owner deletes a workspace; it takes every project and task in it.
   async function removeWorkspace() {
@@ -117,6 +141,24 @@ export default function WorkspacePage() {
           </button>
         )}
       </div>
+      {isWsOwner && hidden.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-sm font-medium text-muted">🔒 Private projects you are not in ({hidden.length})</p>
+          <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+            {hidden.map((h) => (
+              <li key={h.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <span className="size-3 rounded-full" style={{ background: h.color }} aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{h.name}</span>
+                <span className="text-xs text-muted">Owner: {h.owners.join(", ") || "—"}</span>
+                <button type="button" onClick={() => takeOver(h)} className="rounded-full border border-line px-3 py-0.5 text-xs hover:border-accent hover:text-accent">
+                  🛡 Take over
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted">Only the names are shown. Take over only when needed — it is recorded in the project.</p>
+        </section>
+      )}
       {creating && <NewProjectDialog workspaceId={ws} onClose={() => setCreating(false)} />}
     </div>
   );

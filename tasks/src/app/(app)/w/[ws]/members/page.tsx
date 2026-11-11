@@ -11,7 +11,7 @@ type ProjectMember = { project_id: string; user_id: string };
 
 const ROLE_HINT: Record<Role, string> = {
   owner: "Owns the workspace",
-  admin: "Manages people and sees every project",
+  admin: "Manages the workspace's people; opens only the projects they're added to",
   member: "Opens only the projects they're added to (like Teams channels)",
   guest: "Someone from outside — only the projects they're added to",
 };
@@ -180,8 +180,8 @@ function Members() {
                     {p?.full_name} {m.user_id === me?.id && <span className="text-muted">(you)</span>}
                   </p>
                   <p className="truncate text-xs text-muted">{p?.email}</p>
-                  {(m.role === "owner" || m.role === "admin") && <p className="mt-1 text-[11px] text-muted">All projects</p>}
-                  {(m.role === "member" || m.role === "guest") && (
+                  {(
+
                     <div className="mt-1 flex flex-wrap items-center gap-1">
                       {theirProjects.length === 0 && <span className="text-[11px] text-muted">No projects yet</span>}
                       {theirProjects.map((x) => (

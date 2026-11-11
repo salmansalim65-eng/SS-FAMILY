@@ -31,10 +31,9 @@ export function NewProjectDialog({ workspaceId, onClose }: { workspaceId: string
 
   const team = members.filter((m) => m.workspace_id === workspaceId);
   const label = (id: string) => people.get(id)?.full_name || people.get(id)?.email || "Someone";
-  const managers = team.filter((m) => m.role === "owner" || m.role === "admin");
   const needle = q.trim().toLowerCase();
   const choosable = team
-    .filter((m) => (m.role === "member" || m.role === "guest") && m.user_id !== me?.id)
+    .filter((m) => m.user_id !== me?.id)
     .filter((m) => !needle || `${label(m.user_id)} ${people.get(m.user_id)?.email ?? ""}`.toLowerCase().includes(needle))
     .sort((a, b) => label(a.user_id).localeCompare(label(b.user_id)));
 
@@ -128,8 +127,7 @@ export function NewProjectDialog({ workspaceId, onClose }: { workspaceId: string
           </div>
           <div className="space-y-2 p-2">
             <p className="text-xs text-muted">
-              Only the people in a project can open it (like a Teams channel). You are added automatically.
-              {managers.length > 0 && ` Owners/admins (${managers.map((m) => label(m.user_id)).join(", ")}) see every project anyway.`}
+              Private: only the people you add can open this project (like a Teams channel). You become its owner.
             </p>
             {choosable.length > 0 || needle ? (
               <input
