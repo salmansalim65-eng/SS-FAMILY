@@ -1,6 +1,6 @@
 "use server";
 
-import { createSsTask, setSsTaskDone, updateSsTask, type SsTaskPatch } from "@/lib/sstasks";
+import { assignSsTask, createSsTask, setSsTaskDone, updateSsTask, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -64,6 +64,18 @@ export async function editSsTask(id: string, patch: SsTaskPatch): Promise<{ ok: 
     }
     if (patch.bucket !== undefined) clean.bucket = String(patch.bucket).slice(0, 60);
     await updateSsTask(id, clean);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e instanceof Error && e.message) || "Something went wrong." };
+  }
+}
+
+/** Assigns a task to someone on its project (on) or takes it back (off). */
+export async function assignTask(id: string, user: string, on: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(id) || !UUID.test(user)) throw new Error("Unknown task or person.");
+    await assignSsTask(id, user, on);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e instanceof Error && e.message) || "Something went wrong." };

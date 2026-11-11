@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addSsTask, editSsTask, tickSsTask } from "@/app/sstasks/actions";
+import { addSsTask, assignTask, editSsTask, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 
@@ -32,8 +32,10 @@ type Task = {
   checks: number;
   checked: number;
   bucket: string | null;
+  assignee_ids?: string[];
 };
-type Project = { id: string; name: string; color: string | null; workspace: string };
+type Person = { id: string; name: string };
+type Project = { id: string; name: string; color: string | null; workspace: string; people?: Person[] };
 type Tab = "mine" | "by_me";
 type View = "list" | "board";
 type GroupBy = "project" | "progress" | "due" | "priority";
@@ -300,6 +302,32 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   }
   const canAdd = (g: Group) => projects.length > 0 && g.droppable;
 
+  /** Gives the task to someone, or takes it back; shows at once, then reloads. */
+  async function assign(task: Task, person: Person, on: boolean) {
+    setError(null);
+    setState((s) =>
+      s.status === "ready"
+        ? {
+            ...s,
+            tasks: s.tasks.map((t) =>
+              t.id !== task.id
+                ? t
+                : {
+                    ...t,
+                    assignee_ids: on ? [...(t.assignee_ids ?? []), person.id] : (t.assignee_ids ?? []).filter((x) => x !== person.id),
+                    assignees: on ? [...t.assignees, person.name] : t.assignees.filter((x) => x !== person.name),
+                  },
+            ),
+          }
+        : s,
+    );
+    mark(task.id, true);
+    const res = await assignTask(task.id, person.id, on);
+    mark(task.id, false);
+    if (!res.ok) setError(res.error);
+    load(true);
+  }
+
   /** What dropping a task on a group changes, for the current grouping. */
   function dropPatch(g: Group): Patch | null {
     if (!g.droppable) return null;
@@ -429,6 +457,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             projects={projects}
             dates={{ today: todayS, tomorrow: tomorrowS, nextWeek: nextWeekS }}
             onEdit={(patch) => edit(t, patch)}
+            onAssign={(person, on) => assign(t, person, on)}
             onClose={() => setMenu(null)}
             openHref={href(t)}
           />
@@ -470,8 +499,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             ▦ Board
           </button>
         </div>
-        <label className="flex items-center gap-1 text-xs text-muted">
-          Group
+        <label className="flex items-center gap-1 text-xs text-muted" title="Group by">
+          <span className="hidden 2xl:inline">Group</span>
           <select value={prefs.groupBy} onChange={(e) => setPref({ groupBy: e.target.value as GroupBy })} className="rounded-lg border border-line bg-surface px-1.5 py-1 text-xs text-fg">
             <option value="project">Project</option>
             <option value="progress">Progress</option>
@@ -485,9 +514,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           onClick={foldAll}
           disabled={!groups.length}
           title={allFolded ? "Expand all groups" : "Collapse all groups"}
+          aria-label={allFolded ? "Expand all groups" : "Collapse all groups"}
           className="rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-2 disabled:opacity-50"
         >
-          {allFolded ? "⊞ Expand" : "⊟ Collapse"}
+          {allFolded ? "⊞" : "⊟"}
         </button>
         )}
         {projects.length > 0 && (
@@ -752,6 +782,7 @@ function TaskMenu({
   projects,
   dates,
   onEdit,
+  onAssign,
   onClose,
   openHref,
 }: {
@@ -760,6 +791,7 @@ function TaskMenu({
   projects: Project[];
   dates: { today: string; tomorrow: string; nextWeek: string };
   onEdit: (patch: Patch) => void;
+  onAssign: (person: Person, on: boolean) => void;
   onClose: () => void;
   openHref: string;
 }) {
@@ -783,12 +815,44 @@ function TaskMenu({
   const below = window.innerHeight - anchor.bottom > 430 || anchor.top < 430;
   const pos: React.CSSProperties = below ? { left, top: anchor.bottom + 4 } : { left, bottom: window.innerHeight - anchor.top + 4 };
   const workspaces = [...new Set(projects.map((p) => p.workspace))];
+  const people = projects.find((p) => p.id === task.project_id)?.people ?? [];
   const quick = "rounded-full border border-line px-2 py-0.5 text-xs hover:bg-surface-2";
   const label = "text-[11px] font-semibold uppercase tracking-wide text-muted";
   const progress = (task.bucket ?? "To do").toLowerCase();
 
   return (
     <div ref={ref} role="dialog" aria-label="Task options" style={pos} className="fixed z-[70] max-h-[85vh] w-[264px] space-y-3 overflow-y-auto rounded-xl border border-line bg-surface p-3 text-sm shadow-xl" draggable={false}>
+      {people.length > 0 && (
+        <div className="space-y-1.5">
+          <p className={label}>Assigned to</p>
+          <div className="flex flex-wrap gap-1">
+            {people.map((p) => {
+              const on = (task.assignee_ids ?? []).includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onAssign(p, !on)}
+                  title={on ? `Take back from ${p.name}` : `Assign to ${p.name}`}
+                  className={`inline-flex items-center gap-1 rounded-full py-0.5 pl-0.5 pr-2 text-xs ${on ? "bg-accent text-white" : "border border-line hover:bg-surface-2"}`}
+                >
+                  <span className={`flex size-5 items-center justify-center rounded-full text-[10px] font-semibold ${on ? "bg-white/25" : "bg-surface-2"}`}>
+                    {p.name
+                      .split(/\s+/)
+                      .map((w) => w[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()}
+                  </span>
+                  {p.name.split(/\s+/)[0]}
+                  {on && " ✓"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="space-y-1.5">
         <p className={label}>Due date</p>
         <div className="flex flex-wrap gap-1">

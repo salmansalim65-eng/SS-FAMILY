@@ -23,6 +23,7 @@ export type SsTask = {
   checks: number;
   checked: number;
   bucket: string | null;
+  assignee_ids?: string[];
 };
 
 const TIMEOUT_MS = 12_000;
@@ -52,7 +53,7 @@ export async function setSsTaskDone(id: string, done: boolean) {
   if (error) throw new Error(error.message);
 }
 
-export type SsProject = { id: string; name: string; color: string | null; workspace: string };
+export type SsProject = { id: string; name: string; color: string | null; workspace: string; people?: { id: string; name: string }[] };
 
 /** The owner's projects, for "add task". Empty when SS Tasks doesn't have dashboard_projects yet. */
 export async function loadSsProjects(): Promise<SsProject[]> {
@@ -77,6 +78,14 @@ export type SsTaskPatch = { title?: string; due?: string | null; priority?: stri
 export async function updateSsTask(id: string, patch: SsTaskPatch) {
   const { error } = await projectClient("SSTASKS")
     .rpc("dashboard_task_update", { p_key: dashboardKey(), p_task: id, p_patch: patch })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}
+
+/** Gives a task to someone on its project, or takes it back, as SS. */
+export async function assignSsTask(id: string, user: string, on: boolean) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_assign", { p_key: dashboardKey(), p_task: id, p_user: user, p_on: on })
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
 }
