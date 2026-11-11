@@ -47,8 +47,8 @@ const roundBtn =
  */
 const STRIP_KEY = "dashboard.stripTheme";
 const STRIPS = [
-  { key: "classic", name: "Classic", bg: "linear-gradient(90deg,#4f46e5,#7c3aed,#0284c7)" },
   { key: "ocean", name: "Ocean", bg: "linear-gradient(90deg,#0f766e,#0891b2,#2563eb)" },
+  { key: "classic", name: "Classic", bg: "linear-gradient(90deg,#4f46e5,#7c3aed,#0284c7)" },
   { key: "sunset", name: "Sunset", bg: "linear-gradient(90deg,#f97316,#ec4899,#8b5cf6)" },
   { key: "emerald", name: "Emerald", bg: "linear-gradient(90deg,#047857,#10b981,#84cc16)" },
   { key: "midnight", name: "Midnight", bg: "linear-gradient(90deg,#0f172a,#1e3a8a,#4338ca)" },
@@ -76,7 +76,7 @@ export function Header({
     return () => clearInterval(t);
   }, []);
 
-  // The strip's colours: a few gradients to pick from (🎨), remembered in this browser.
+  // The strip's colours: Ocean by default, others from 🎨, remembered in this browser.
   const [strip, setStrip] = useState<(typeof STRIPS)[number]>(STRIPS[0]);
   const [picking, setPicking] = useState(false);
   useEffect(() => {
