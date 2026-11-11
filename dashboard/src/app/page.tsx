@@ -49,13 +49,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
 
         {/* The day at a glance: this week's schedule, to-do and notes side by side. */}
         {screen !== "projects" && (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <CalendarEvents
               slim
               fallback={settings.google_calendar_embed_url ? <CalendarEmbed src={settings.google_calendar_embed_url} /> : null}
             />
-            <SsTasks appUrl={SSTASKS_URL} />
-            <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm md:col-span-2 xl:col-span-1">
+            {/* Tasks matter most: twice as wide; under the calendar and notes on tablets. */}
+            <div className="min-w-0 md:order-last md:col-span-2 xl:order-none">
+              <SsTasks appUrl={SSTASKS_URL} />
+            </div>
+            <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm">
               <Notes initial={notes} column />
             </div>
           </div>

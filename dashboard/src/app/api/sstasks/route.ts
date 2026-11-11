@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { loadSsTasks, SSTASKS_URL } from "@/lib/sstasks";
+import { loadSsProjects, loadSsTasks, SSTASKS_URL } from "@/lib/sstasks";
 import { syncSsTasksWithGoogle, type SyncResult } from "@/lib/sstasks-sync";
 import { getOwner } from "@/lib/supabase/server";
 
@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
     sync = { error: e instanceof Error ? e.message : "Google sync failed" };
   }
   try {
-    const tasks = await loadSsTasks();
-    return NextResponse.json({ tasks, appUrl: SSTASKS_URL, sync }, { headers: { "Cache-Control": "no-store" } });
+    const [tasks, projects] = await Promise.all([loadSsTasks(), loadSsProjects()]);
+    return NextResponse.json({ tasks, projects, appUrl: SSTASKS_URL, sync }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Could not load SS Tasks", appUrl: SSTASKS_URL },

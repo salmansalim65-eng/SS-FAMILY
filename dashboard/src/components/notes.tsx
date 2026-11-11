@@ -179,13 +179,17 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // In the slim column, notes come first and checklists below them.
+  const shown = column ? [...notes.filter((n) => n.kind !== "checklist"), ...notes.filter((n) => n.kind === "checklist")] : notes;
+
   function onDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
-    const from = notes.findIndex((n) => n.id === active.id);
-    const to = notes.findIndex((n) => n.id === over.id);
+    const from = shown.findIndex((n) => n.id === active.id);
+    const to = shown.findIndex((n) => n.id === over.id);
     // Keep pinned and unpinned notes apart; pinning is how a note changes group.
-    if (notes[from].pinned !== notes[to].pinned) return;
-    persistOrder(arrayMove(notes, from, to));
+    if (shown[from].pinned !== shown[to].pinned) return;
+    if (column && shown[from].kind !== shown[to].kind) return;
+    persistOrder(arrayMove(shown, from, to));
   }
 
   const action = initial && (
@@ -222,13 +226,13 @@ export function Notes({ initial, column = false }: { initial: Note[] | null; col
         <p className="rounded-2xl border border-dashed border-line bg-surface p-4 text-sm text-muted">No notes yet. Add a note or a checklist.</p>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={notes.map((n) => n.id)} strategy={rectSortingStrategy}>
+          <SortableContext items={shown.map((n) => n.id)} strategy={rectSortingStrategy}>
             <ul
-              className={`grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 ${
-                column ? "max-h-[21rem] overflow-y-auto p-0.5 pr-1" : "lg:grid-cols-4"
+              className={`grid grid-cols-1 gap-3 ${
+                column ? "max-h-[38rem] overflow-y-auto p-0.5 pr-1 min-[480px]:max-xl:grid-cols-2" : "min-[480px]:grid-cols-2 lg:grid-cols-4"
               }`}
             >
-              {notes.map((note) => (
+              {shown.map((note) => (
                 <NoteCard
                   key={note.id}
                   lang={lang}
