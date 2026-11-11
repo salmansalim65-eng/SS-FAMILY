@@ -537,9 +537,24 @@ function ProjectPeople({
   onClose: () => void;
 }) {
   const data = useAppData();
-  const { projects, members, projectMembers, people, me, reload } = data;
+  const { projects, members, projectMembers, people, me, reload, workspaces } = data;
   const project = projects.find((p) => p.id === projectId);
   const [error, setError] = useState<string | null>(null);
+  const [resetLink, setResetLink] = useState<{ userId: string; link: string } | null>(null);
+  const isOwner = workspaces.find((w) => w.id === project?.workspace_id)?.role === "owner";
+
+  // A one-time link (1 hour) the person opens to choose a new password; workspace owners only.
+  async function makeResetLink(userId: string) {
+    setError(null);
+    setResetLink(null);
+    const { data: token, error } = await supabase().rpc("create_password_reset", { p_user: userId });
+    if (error) return setError(error.message);
+    const link = `${location.origin}/reset/${token as string}`;
+    setResetLink({ userId, link });
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {}
+  }
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
 
@@ -653,7 +668,7 @@ function ProjectPeople({
           </p>
           <ul className="divide-y divide-line">
             {inProject.map((m) => (
-              <li key={m.user_id} className="flex items-center gap-2 px-3 py-2">
+              <li key={m.user_id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                 <Avatar person={people.get(m.user_id)} size="sm" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">
@@ -671,16 +686,42 @@ function ProjectPeople({
                     {m.role} · all projects
                   </span>
                 ) : (
-                  canManage && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => remove(m.user_id)}
-                      className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-danger hover:text-danger"
+                  <span className="flex items-center gap-1">
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => makeResetLink(m.user_id)}
+                        title="Make a one-time link to choose a new password"
+                        className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
+                      >
+                        🔑 Reset password
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => remove(m.user_id)}
+                        className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-danger hover:text-danger"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                )}
+                {resetLink?.userId === m.user_id && (
+                  <div className="mt-1 flex w-full flex-wrap items-center gap-2 rounded-lg bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100">
+                    <span>✓ Reset link copied (works once, 1 hour):</span>
+                    <code className="min-w-0 flex-1 truncate">{resetLink.link}</code>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Task Hub password reset link (works once, for 1 hour): ${resetLink.link}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium underline"
                     >
-                      Remove
-                    </button>
-                  )
+                      WhatsApp
+                    </a>
+                  </div>
                 )}
               </li>
             ))}
@@ -711,7 +752,7 @@ function ProjectPeople({
                 {others.map((m) => (
                   <li
                     key={m.user_id}
-                    className="flex items-center gap-2 px-3 py-2"
+                    className="flex flex-wrap items-center gap-2 px-3 py-2"
                   >
                     <Avatar person={people.get(m.user_id)} size="sm" />
                     <div className="min-w-0 flex-1">
@@ -720,6 +761,17 @@ function ProjectPeople({
                         {people.get(m.user_id)?.email}
                       </p>
                     </div>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => makeResetLink(m.user_id)}
+                        title="Reset password"
+                        aria-label={`Reset password for ${name(m.user_id)}`}
+                        className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
+                      >
+                        🔑
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}
@@ -728,6 +780,20 @@ function ProjectPeople({
                     >
                       ＋ Add
                     </button>
+                    {resetLink?.userId === m.user_id && (
+                      <div className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100">
+                        <span>✓ Reset link copied (works once, 1 hour):</span>
+                        <code className="min-w-0 flex-1 truncate">{resetLink.link}</code>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(`Task Hub password reset link (works once, for 1 hour): ${resetLink.link}`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium underline"
+                        >
+                          WhatsApp
+                        </a>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
