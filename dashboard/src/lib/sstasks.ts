@@ -12,6 +12,7 @@ export type SsTask = {
   id: string;
   title: string;
   due: string | null;
+  time?: string | null; // HH:MM on the due date, if set
   priority: "urgent" | "important" | "medium" | "low" | null;
   project_id: string;
   project: string;
@@ -72,7 +73,7 @@ export async function createSsTask(project: string, title: string, due: string |
   return data as string;
 }
 
-export type SsTaskPatch = { title?: string; due?: string | null; priority?: string | null; project?: string; bucket?: string };
+export type SsTaskPatch = { title?: string; due?: string | null; time?: string | null; priority?: string | null; project?: string; bucket?: string };
 
 /** Moves or edits a task (due date, priority, project, column), as SS. */
 export async function updateSsTask(id: string, patch: SsTaskPatch) {
@@ -88,6 +89,7 @@ export type SsTaskDetail = {
   notes: string;
   start: string | null;
   due: string | null;
+  time?: string | null;
   priority: string | null;
   done: boolean;
   project_id: string;
@@ -101,7 +103,7 @@ export type SsTaskDetail = {
   can_delete: boolean;
 };
 export type SsTaskOp =
-  | { op: "set"; title?: string; notes?: string; start?: string; due?: string; priority?: string; bucket?: string; done?: boolean }
+  | { op: "set"; title?: string; notes?: string; start?: string; due?: string; time?: string; priority?: string; bucket?: string; done?: boolean }
   | { op: "check_add"; title: string }
   | { op: "check_toggle"; id: string }
   | { op: "check_delete"; id: string }

@@ -5,6 +5,7 @@ import { TaskPanel } from "@/components/task-panel";
 import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, removeProject, removeTask, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
+import type { CalendarEvent } from "@/lib/types";
 
 // Task Hub on the dashboard, Planner-style: the open tasks given to SS and
 // the ones SS gave to others, as a list or a board, grouped by project,
@@ -22,6 +23,7 @@ type Task = {
   id: string;
   title: string;
   due: string | null;
+  time?: string | null; // HH:MM on the due date
   priority: Priority | null;
   project_id: string;
   project: string;
@@ -45,7 +47,7 @@ type Filter = "late" | "today" | "week" | "high";
 type Prefs = { tab: Tab; view: View; groupBy: GroupBy; folded: string[]; lastProject: string | null };
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; tasks: Task[]; projects: Project[]; workspaces: Workspace[] };
 type Group = { key: string; label: string; sub?: string; color: string; tasks: Task[]; droppable: boolean };
-type Patch = { due?: string | null; priority?: string | null; project?: string; bucket?: string };
+type Patch = { due?: string | null; time?: string | null; priority?: string | null; project?: string; bucket?: string };
 
 const DEFAULT_PREFS: Prefs = { tab: "mine", view: "list", groupBy: "project", folded: [], lastProject: null };
 const GRAY = "#94a3b8";
@@ -83,6 +85,21 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const shift = (s: string, days: number) => iso(new Date(utc(s).getTime() + days * 86_400_000));
 const monthFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "long", year: "numeric" });
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** "15:30" → "3:30 pm" (or "3 PM" for hour labels). */
+function clock12(hhmm: string, label = false) {
+  const h = Number(hhmm.slice(0, 2));
+  const m = hhmm.slice(3, 5);
+  const h12 = h % 12 || 12;
+  if (label) return `${h12} ${h < 12 ? "AM" : "PM"}`;
+  return `${h12}${m === "00" ? "" : `:${m}`} ${h < 12 ? "am" : "pm"}`;
+}
+/** Dark or light text, whichever reads better on a calendar colour. */
+function textOn(hex: string | null) {
+  const m = hex?.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!m) return "#fff";
+  const [r, g, b] = m.slice(1).map((x) => parseInt(x, 16) / 255);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 0.65 ? "#1f2937" : "#fff";
+}
 
 function readPrefs(): Prefs {
   try {
@@ -119,6 +136,9 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [calAnchor, setCalAnchor] = useState<string | null>(null);
   const [moreDay, setMoreDay] = useState<string | null>(null);
   const [addDay, setAddDay] = useState<string | null>(null);
+  const [addSlot, setAddSlot] = useState<{ day: string; time: string } | null>(null); // week view: "+ task" at an hour
+  const [appts, setAppts] = useState<CalendarEvent[]>([]); // Google Calendar appointments shown in the calendar view
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [menu, setMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null); // the task panel
   const [dragId, setDragId] = useState<string | null>(null);
@@ -184,6 +204,38 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const laterS = ymd(addDays(today, 8));
   const tasks = useMemo(() => (state.status === "ready" ? state.tasks : []), [state]);
   const projects = useMemo(() => (state.status === "ready" ? state.projects : []), [state]);
+
+  // The calendar view also shows Google Calendar appointments for the dates on screen.
+  const calRange = useMemo(() => {
+    const anchor = calAnchor ?? todayS;
+    const startOf = (d: string) => shift(d, -utc(d).getUTCDay());
+    const start = calMode === "month" ? startOf(`${anchor.slice(0, 8)}01`) : startOf(anchor);
+    return { start, days: calMode === "month" ? 42 : 7 };
+  }, [calAnchor, calMode, todayS]);
+  useEffect(() => {
+    if (prefs.view !== "calendar") return;
+    let alive = true;
+    const parts: [string, number][] = calRange.days > 31 ? [[calRange.start, 31], [shift(calRange.start, 31), calRange.days - 31]] : [[calRange.start, calRange.days]];
+    Promise.all(
+      parts.map(([from, days]) =>
+        fetch(`/api/calendar?from=${from}&days=${days}`, { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : { events: [] }))
+          .then((j: { events?: CalendarEvent[] }) => j.events ?? [])
+          .catch(() => [] as CalendarEvent[]),
+      ),
+    ).then((lists) => {
+      if (!alive) return;
+      const seen = new Set<string>();
+      setAppts(lists.flat().filter((e) => (seen.has(e.id + e.start) ? false : (seen.add(e.id + e.start), true))));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [prefs.view, calRange]);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const workspaces = state.status === "ready" ? state.workspaces : [];
   // Everyone SS can give tasks to, by id, from the projects' people.
   const peopleById = useMemo(() => {
@@ -357,6 +409,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                 : {
                     ...t,
                     ...(patch.due !== undefined ? { due: patch.due } : {}),
+                    ...(patch.time !== undefined ? { time: patch.time } : {}),
                     ...(patch.priority !== undefined ? { priority: (patch.priority || null) as Priority | null } : {}),
                     ...(patch.bucket !== undefined ? { bucket: patch.bucket } : {}),
                     ...(p ? { project_id: p.id, project: p.name, color: p.color, workspace: p.workspace, bucket: "To do" } : {}),
@@ -952,6 +1005,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             className={`min-w-0 flex-1 truncate text-left font-medium ${late ? "text-red-700 dark:text-red-300" : ""}`}
           >
             {t.priority === "urgent" && <span className="text-red-600">! </span>}
+            {t.time && <span className="mr-1 font-normal text-muted">{clock12(t.time)}</span>}
             {t.title}
           </button>
           {menu?.id === t.id && (
@@ -973,14 +1027,241 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       );
     };
 
-    async function addOn(day: string, title: string) {
+    async function addOn(day: string, title: string, time?: string) {
       const fallback = projects.some((p) => p.id === prefs.lastProject) ? prefs.lastProject! : projects[0]?.id;
       if (!fallback) return "No project to add to.";
-      const res = await addSsTask(fallback, title, day, null);
+      const res = await addSsTask(fallback, title, day || null, null);
       if (!res.ok) return res.error;
+      if (time) await editSsTask(res.id, { time });
       if (prefs.tab !== "mine") setPref({ tab: "mine" });
       load(true);
       return null;
+    }
+
+    // ---- Appointments (Google Calendar) and the week's hour grid ----
+    const mins = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+    function apptsOn(day: string) {
+      return appts
+        .filter((e) => {
+          const s0 = e.start.slice(0, 10);
+          const e0 = e.end.slice(0, 10);
+          if (e.allDay) return s0 <= day && day < e0;
+          return s0 <= day && (day < e0 || (day === e0 && (s0 < day ? mins(e.end.slice(11, 16)) > 0 : true)));
+        })
+        .sort((a, b) => a.start.localeCompare(b.start));
+    }
+    const apptRange = (e: CalendarEvent) => `${clock12(e.start.slice(11, 16))} – ${clock12(e.end.slice(11, 16))}`;
+
+    function weekGrid() {
+      const HOUR = 48;
+      const now = new Date(nowTick);
+      const nowMin = Number(now.toLocaleString("en-GB", { timeZone: "Asia/Karachi", hour: "2-digit", hour12: false })) * 60 + now.getMinutes();
+      const cols = "grid grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]";
+      type Item = { key: string; top: number; bottom: number; lane: number; lanes: number; appt?: CalendarEvent; task?: Task };
+      const layout = (day: string): Item[] => {
+        const items: Item[] = [
+          ...apptsOn(day)
+            .filter((e) => !e.allDay)
+            .map((e) => {
+              const top = e.start.slice(0, 10) < day ? 0 : mins(e.start.slice(11, 16));
+              const bottom = e.end.slice(0, 10) > day ? 1440 : mins(e.end.slice(11, 16));
+              return { key: `a${e.id}${e.start}`, top, bottom: Math.max(bottom, top + 25), lane: 0, lanes: 1, appt: e };
+            }),
+          ...(byDay.get(day) ?? [])
+            .filter((t) => t.time)
+            .map((t) => ({ key: `t${t.id}`, top: mins(t.time!), bottom: mins(t.time!) + 45, lane: 0, lanes: 1, task: t })),
+        ].sort((a, b) => a.top - b.top || b.bottom - a.bottom);
+        let cluster: Item[] = [];
+        let end = -1;
+        const finish = () => {
+          const n = Math.max(1, ...cluster.map((c) => c.lane + 1));
+          cluster.forEach((c) => (c.lanes = n));
+        };
+        for (const it of items) {
+          if (it.top >= end) {
+            finish();
+            cluster = [];
+          }
+          const laneEnds = cluster.reduce<number[]>((acc, c) => ((acc[c.lane] = Math.max(acc[c.lane] ?? 0, c.bottom)), acc), []);
+          const free = laneEnds.findIndex((x) => x <= it.top);
+          it.lane = free === -1 ? laneEnds.length : free;
+          cluster.push(it);
+          end = Math.max(end, it.bottom);
+        }
+        finish();
+        return items;
+      };
+      const minuteAt = (e: React.MouseEvent | React.DragEvent) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        return Math.min(Math.max(0, Math.floor(((e.clientY - r.top) / HOUR) * 2) * 30), 23 * 60 + 30);
+      };
+      const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+      return (
+        <div className="overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="overflow-x-auto">
+            <div className="min-w-[680px]">
+              {/* Day headings */}
+              <div className={`${cols} border-b border-line bg-surface-2/40`}>
+                <div className="self-end pb-1 pl-1 text-[10px] text-muted">PKT</div>
+                {days.map((day) => {
+                  const isToday = day === todayS;
+                  return (
+                    <div key={day} className="flex flex-col items-center py-2">
+                      <span className={`text-[11px] font-semibold uppercase tracking-wide ${isToday ? "text-accent" : "text-muted"}`}>
+                        {WEEKDAYS[utc(day).getUTCDay()].slice(0, 3)}
+                      </span>
+                      <span className={`mt-0.5 grid size-9 place-items-center rounded-full text-lg ${isToday ? "bg-accent font-semibold text-white shadow" : ""}`}>
+                        {Number(day.slice(8))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* All day: appointments without a time and tasks without a time */}
+              <div className={`${cols} border-b border-line`}>
+                <div className="py-1.5 pl-1 text-[10px] leading-tight text-muted">All day</div>
+                {days.map((day) => (
+                  <div key={day} {...dropOn(day)} className={`min-h-9 space-y-0.5 border-l border-line/70 p-0.5 ${day === todayS ? "bg-accent/5" : ""} ${ring(day)}`}>
+                    {apptsOn(day)
+                      .filter((e) => e.allDay)
+                      .map((e) => (
+                        <a
+                          key={e.id + e.start}
+                          href={e.link ?? undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${e.title} · All day`}
+                          className="block truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                          style={{ backgroundColor: e.color ?? "#64748b", color: textOn(e.color) }}
+                        >
+                          {e.title}
+                        </a>
+                      ))}
+                    {(byDay.get(day) ?? []).filter((t) => !t.time).map(chip)}
+                  </div>
+                ))}
+              </div>
+
+              {/* Hours */}
+              <div className={`relative overflow-y-auto [scrollbar-width:thin] ${full ? "max-h-[calc(100dvh-20rem)]" : "max-h-[560px]"}`} ref={(el) => {
+                if (el && !el.dataset.scrolled) {
+                  el.dataset.scrolled = "1";
+                  el.scrollTop = Math.max(7, Math.floor(nowMin / 60) - 1) * HOUR;
+                }
+              }}>
+                <div className={cols} style={{ height: 24 * HOUR }}>
+                  <div className="relative">
+                    {Array.from({ length: 23 }, (_, h) => (
+                      <span key={h} className="absolute right-1.5 -translate-y-1/2 text-[10px] text-muted" style={{ top: (h + 1) * HOUR }}>
+                        {clock12(hhmm((h + 1) * 60), true)}
+                      </span>
+                    ))}
+                  </div>
+                  {days.map((day) => (
+                    <div
+                      key={day}
+                      className={`relative cursor-pointer border-l border-line/70 ${day === todayS ? "bg-accent/[0.04]" : ""} ${over === `slot:${day}` ? "bg-accent/10" : ""}`}
+                      style={{ backgroundImage: `repeating-linear-gradient(to bottom, transparent 0 ${HOUR / 2 - 1}px, color-mix(in srgb, var(--line) 45%, transparent) ${HOUR / 2 - 1}px ${HOUR / 2}px, transparent ${HOUR / 2}px ${HOUR - 1}px, var(--line) ${HOUR - 1}px ${HOUR}px)` }}
+                      onClick={(e) => {
+                        if (e.target !== e.currentTarget || projects.length === 0) return;
+                        setAddSlot({ day, time: hhmm(minuteAt(e)) });
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragId) return;
+                        e.preventDefault();
+                        setOver(`slot:${day}`);
+                      }}
+                      onDragLeave={() => setOver((o) => (o === `slot:${day}` ? null : o))}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setOver(null);
+                        const t = tasks.find((x) => x.id === dragId);
+                        setDragId(null);
+                        if (t) edit(t, { due: day, time: hhmm(minuteAt(e)) });
+                      }}
+                    >
+                      {layout(day).map((it) => {
+                        const style = {
+                          top: (it.top / 60) * HOUR + 1,
+                          height: Math.max(22, ((it.bottom - it.top) / 60) * HOUR - 2),
+                          left: `calc(${(it.lane / it.lanes) * 100}% + 2px)`,
+                          width: `calc(${100 / it.lanes}% - 4px)`,
+                        };
+                        if (it.appt) {
+                          const e = it.appt;
+                          return (
+                            <a
+                              key={it.key}
+                              href={e.link ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`${e.title} · ${apptRange(e)}${e.location ? ` · ${e.location}` : ""}`}
+                              className="absolute overflow-hidden rounded-lg px-1.5 py-0.5 text-[11px] leading-tight shadow-sm ring-1 ring-surface transition hover:z-10 hover:brightness-110"
+                              style={{ ...style, backgroundColor: e.color ?? "#64748b", color: textOn(e.color) }}
+                            >
+                              <span className="block truncate font-semibold">{e.title}</span>
+                              <span className="block truncate opacity-85">{apptRange(e)}</span>
+                            </a>
+                          );
+                        }
+                        const t = it.task!;
+                        const late = !!t.due && (t.due < todayS || (t.due === todayS && mins(t.time!) < nowMin));
+                        return (
+                          <div
+                            key={it.key}
+                            {...dragProps(t)}
+                            onClick={(e) => {
+                              if (!(e.target as HTMLElement).closest("button")) setOpenTask(t.id);
+                            }}
+                            title={`${t.title} · ${clock12(t.time!)} · ${t.project}`}
+                            className={`absolute flex cursor-pointer gap-1 overflow-hidden rounded-lg border border-line bg-surface px-1.5 py-0.5 text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ${dragId === t.id ? "opacity-40" : ""}`}
+                            style={{ ...style, borderLeft: `4px solid ${t.color || GRAY}` }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => tick(t)}
+                              aria-label={`Mark "${t.title}" done`}
+                              className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border border-muted text-[8px] text-transparent hover:border-emerald-600 hover:text-emerald-600"
+                            >
+                              ✓
+                            </button>
+                            <span className="min-w-0">
+                              <span className={`block truncate font-semibold ${late ? "text-red-700 dark:text-red-300" : ""}`}>
+                                {t.priority === "urgent" && <span className="text-red-600">! </span>}
+                                {t.title}
+                              </span>
+                              <span className="block truncate text-muted">
+                                {clock12(t.time!)} · {t.project}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {day === todayS && (
+                        <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top: (nowMin / 60) * HOUR }}>
+                          <div className="absolute -left-1.5 -top-1.5 size-3 rounded-full bg-red-500" />
+                          <div className="h-0.5 bg-red-500" />
+                        </div>
+                      )}
+                      {addSlot?.day === day && (
+                        <div className="absolute inset-x-1 z-30 rounded-lg border border-accent bg-surface p-1 shadow-lg" style={{ top: (mins(addSlot.time) / 60) * HOUR }}>
+                          <p className="px-0.5 pb-0.5 text-[10px] font-medium text-accent">{clock12(addSlot.time)}</p>
+                          <DayAdd
+                            onAdd={(title) => addOn(day, title, addSlot.time)}
+                            onClose={() => setAddSlot(null)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
     }
 
     return (
@@ -1005,6 +1286,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
               ))}
             </div>
           </div>
+          {calMode === "week" ? weekGrid() : (
           <div className="overflow-hidden rounded-xl border border-line">
             <div className="grid grid-cols-7 border-b border-line bg-surface-2/60 text-center text-xs font-medium text-muted">
               {WEEKDAYS.map((d) => (
@@ -1017,7 +1299,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             <div className="grid grid-cols-7">
               {days.map((day) => {
                 const items = (byDay.get(day) ?? []).sort((a, b) => a.title.localeCompare(b.title));
-                const inMonth = calMode === "week" || day.slice(0, 7) === first.slice(0, 7);
+                const inMonth = day.slice(0, 7) === first.slice(0, 7);
                 const isToday = day === todayS;
                 const all = moreDay === day;
                 return (
@@ -1046,6 +1328,23 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                         </button>
                       )}
                     </div>
+                    {apptsOn(day).slice(0, all ? 99 : 2).map((e) => (
+                      <a
+                        key={e.id + e.start}
+                        href={e.link ?? undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${e.title} · ${e.allDay ? "All day" : apptRange(e)}`}
+                        className="flex items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                        style={{ backgroundColor: e.color ?? "#64748b", color: textOn(e.color) }}
+                      >
+                        <span className="truncate">
+                          {!e.allDay && <span className="opacity-80">{clock12(e.start.slice(11, 16))} </span>}
+                          {e.title}
+                        </span>
+                      </a>
+                    ))}
+                    {apptsOn(day).length > 2 && !all && <span className="text-[10px] text-muted">+{apptsOn(day).length - 2} appointments</span>}
                     {(all ? items : items.slice(0, limit)).map(chip)}
                     {items.length > limit && (
                       <button type="button" onClick={() => setMoreDay(all ? null : day)} className="text-left text-[11px] text-muted hover:text-fg">
@@ -1058,6 +1357,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
               })}
             </div>
           </div>
+          )}
         </div>
 
         {/* Unscheduled: drop here to clear a due date. */}
