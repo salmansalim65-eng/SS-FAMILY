@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Avatar, useAppData } from "@/components/data";
 import { NewProjectDialog } from "@/components/new-project";
@@ -39,6 +39,24 @@ export default function WorkspacePage() {
   const [creating, setCreating] = useState(false);
   const newProject = () => setCreating(true);
 
+  const router = useRouter();
+
+  // Only the owner deletes a workspace; it takes every project and task in it.
+  async function removeWorkspace() {
+    if (!workspace) return;
+    const typed = prompt(
+      `Delete the workspace "${workspace.name}" for good?\n\nAll its projects (${list.length}), tasks and people links are deleted. This cannot be undone.\n\nPress OK to delete (the name is filled in for you):`,
+      workspace.name,
+    );
+    if (typed === null) return;
+    if (typed.trim() !== workspace.name.trim()) return alert("The name didn't match, so nothing was deleted.");
+    const { data, error } = await supabase().from("workspaces").delete().eq("id", ws).select("id");
+    if (error) return alert(error.message);
+    if (!data?.length) return alert("Only the workspace owner can delete it.");
+    await reload();
+    router.replace("/");
+  }
+
   async function rename() {
     const name = prompt("Workspace name", workspace?.name);
     if (!name?.trim()) return;
@@ -57,6 +75,11 @@ export default function WorkspacePage() {
         {canManage && (
           <button type="button" onClick={rename} className="text-xs text-muted hover:text-fg">
             Rename
+          </button>
+        )}
+        {workspace.role === "owner" && (
+          <button type="button" onClick={removeWorkspace} className="text-xs text-muted hover:text-danger">
+            🗑 Delete workspace
           </button>
         )}
         <div className="flex-1" />
