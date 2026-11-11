@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsMemberAction, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -243,6 +243,16 @@ export async function setProjectMember(project: string, user: string, action: Ss
     if (!MEMBER_ACTIONS.includes(action)) throw new Error("Unknown change.");
     await setSsProjectMember(project, user, action);
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function projectBoard(project: string): Promise<{ ok: true; data: SsProjectBoard } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project)) throw new Error("Unknown project.");
+    return { ok: true, data: await getSsProjectBoard(project) };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
   }

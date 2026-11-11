@@ -215,3 +215,31 @@ export async function setSsProjectMember(project: string, user: string, action: 
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
 }
+
+export type SsBoardTask = {
+  id: string;
+  title: string;
+  bucket_id: string | null;
+  done: boolean;
+  due: string | null;
+  time: string | null;
+  priority: SsTask["priority"];
+  assignees: string[];
+  checks: number;
+  checked: number;
+};
+export type SsProjectBoard = {
+  project: { id: string; name: string; color: string | null; workspace: string };
+  can_manage: boolean;
+  buckets: { id: string; name: string }[];
+  tasks: SsBoardTask[];
+};
+
+/** A whole project as a Planner-style board: its columns and every task the owner may see in it. */
+export async function getSsProjectBoard(project: string): Promise<SsProjectBoard> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_project_board", { p_key: dashboardKey(), p_project: project })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+  return data as SsProjectBoard;
+}
