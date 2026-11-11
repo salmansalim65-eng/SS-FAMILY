@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/join/"];
+const PUBLIC = ["/login", "/join/", "/reset/"];
 
 // Keeps the session cookie fresh and sends signed-out visitors to the login page.
 export async function proxy(request: NextRequest) {

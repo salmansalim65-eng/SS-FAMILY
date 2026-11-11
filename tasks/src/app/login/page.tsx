@@ -43,6 +43,7 @@ function LoginForm() {
         </button>
       </form>
       <p className="text-xs text-muted">New here? Open the invite link you were sent.</p>
+      <p className="text-xs text-muted">Forgot your password? Ask your workspace owner for a password reset link (People page → 🔑 Reset password).</p>
     </AuthCard>
   );
 }

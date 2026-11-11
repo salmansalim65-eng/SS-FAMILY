@@ -32,6 +32,7 @@ function Members() {
   const [role, setRole] = useState<Role>("member");
   const [project, setProject] = useState(preselect ?? "");
   const [made, setMade] = useState<string | null>(null);
+  const [reset, setReset] = useState<{ userId: string; link: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -98,6 +99,19 @@ function Members() {
   async function removeFromProject(userId: string, projectId: string) {
     await supabase().from("project_members").delete().eq("project_id", projectId).eq("user_id", userId);
     load();
+  }
+
+  // A one-time link (1 hour) the person opens to choose a new password; only owners can make one.
+  async function makeResetLink(userId: string) {
+    setError(null);
+    setReset(null);
+    const { data, error } = await supabase().rpc("create_password_reset", { p_user: userId });
+    if (error) return setError(error.message);
+    const link = `${location.origin}/reset/${data as string}`;
+    setReset({ userId, link });
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {}
   }
 
   async function cancelInvite(id: string) {
@@ -203,6 +217,25 @@ function Members() {
                   </select>
                 ) : (
                   <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs capitalize">{m.role}</span>
+                )}
+                {workspace.role === "owner" && (m.role === "member" || m.role === "guest") && m.user_id !== me?.id && (
+                  <button type="button" onClick={() => makeResetLink(m.user_id)} className="text-xs text-muted hover:text-accent" title="Make a one-time link to choose a new password">
+                    🔑 Reset password
+                  </button>
+                )}
+                {reset?.userId === m.user_id && (
+                  <div className="flex w-full flex-wrap items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100">
+                    <span>✓ Reset link copied (works once, 1 hour):</span>
+                    <code className="min-w-0 flex-1 truncate">{reset.link}</code>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Task Hub password reset link (works once, for 1 hour): ${reset.link}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium underline"
+                    >
+                      WhatsApp
+                    </a>
+                  </div>
                 )}
                 {m.role !== "owner" && (canManage || m.user_id === me?.id) && (
                   <button type="button" onClick={() => removeMember(m.user_id)} className="text-xs text-muted hover:text-danger">
