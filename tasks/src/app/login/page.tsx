@@ -25,7 +25,7 @@ function LoginForm() {
   }
 
   return (
-    <AuthCard title="SS Tasks" subtitle="Sign in to your tasks">
+    <AuthCard title="Task Hub" subtitle="Sign in to your tasks">
       <form onSubmit={submit} className="space-y-3">
         <input type="email" required autoComplete="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
         <input

@@ -140,7 +140,7 @@ function Members() {
             <div className="flex flex-wrap items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100">
               <span>✓ Link copied:</span>
               <code className="min-w-0 flex-1 truncate">{made}</code>
-              <a href={`https://wa.me/?text=${encodeURIComponent(`Join me on SS Tasks: ${made}`)}`} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+              <a href={`https://wa.me/?text=${encodeURIComponent(`Join me on Task Hub: ${made}`)}`} target="_blank" rel="noopener noreferrer" className="font-medium underline">
                 WhatsApp
               </a>
             </div>

@@ -100,7 +100,7 @@ const body = (t: { title: string; notes: string; due: string | null }) => ({
 
 function dashboardKey() {
   const key = process.env.SSTASKS_DASHBOARD_KEY;
-  if (!key) throw new Error("SS Tasks is not connected yet (SSTASKS_DASHBOARD_KEY).");
+  if (!key) throw new Error("Task Hub is not connected yet (SSTASKS_DASHBOARD_KEY).");
   return key;
 }
 
@@ -124,7 +124,7 @@ async function apply(ops: Op[], errors: string[]) {
 
 /**
  * One sync pass. `db` is the dashboard's own Supabase (for the Google token
- * and the dashboard's task priorities). Skips quietly when Google or SS Tasks
+ * and the dashboard's task priorities). Skips quietly when Google or Task Hub
  * isn't connected, or when another pass ran in the last `minSeconds`.
  */
 export async function syncSsTasksWithGoogle(db: SupabaseClient, minSeconds = 60): Promise<SyncResult> {

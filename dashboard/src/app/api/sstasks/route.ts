@@ -6,8 +6,8 @@ import { getOwner } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// GET /api/sstasks — SS's open tasks from SS Tasks (assigned to SS, or by SS
-// to others). First keeps SS Tasks and Google Tasks in step (at most once a
+// GET /api/sstasks — SS's open tasks from Task Hub (assigned to SS, or by SS
+// to others). First keeps Task Hub and Google Tasks in step (at most once a
 // minute; ?sync=now after the ↻ button or a tick).
 export async function GET(req: NextRequest) {
   const owner = await getOwner();
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ tasks, projects, workspaces, appUrl: SSTASKS_URL, sync }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Could not load SS Tasks", appUrl: SSTASKS_URL },
+      { error: e instanceof Error ? e.message : "Could not load Task Hub", appUrl: SSTASKS_URL },
       { status: 502, headers: { "Cache-Control": "no-store" } },
     );
   }

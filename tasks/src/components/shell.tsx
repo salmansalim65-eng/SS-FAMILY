@@ -45,7 +45,7 @@ export function Shell({ userId, children }: { userId: string; children: React.Re
       <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 px-2 pt-1">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon.svg" alt="" className="size-8" />
-        <span className="font-semibold">SS Tasks</span>
+        <span className="font-semibold">Task Hub</span>
       </Link>
       <div className="space-y-0.5">
         <Link href="/" onClick={() => setOpen(false)} className={link("/", path === "/")}>

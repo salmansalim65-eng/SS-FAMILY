@@ -5,12 +5,12 @@ import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, sha
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 
-// SS Tasks on the dashboard, Planner-style: the open tasks given to SS and
+// Task Hub on the dashboard, Planner-style: the open tasks given to SS and
 // the ones SS gave to others, as a list or a board, grouped by project,
 // progress, due date or priority under coloured headings that fold.
 // Drag a task to another group to move it (project, column, due date or
 // priority); ⋯ on a task changes the same things; tick marks it done; a
-// click opens it in SS Tasks; "+ Task" adds one. Filters narrow the view.
+// click opens it in Task Hub; "+ Task" adds one. Filters narrow the view.
 // View, grouping, tab and folded groups are remembered in this browser.
 
 const REFRESH_MS = 3 * 60 * 1000;
@@ -127,7 +127,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     try {
       const res = await fetch(now ? "/api/sstasks?sync=now" : "/api/sstasks", { cache: "no-store" });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Could not load SS Tasks");
+      if (!res.ok) throw new Error(body.error || "Could not load Task Hub");
       setState({ status: "ready", tasks: body.tasks, projects: body.projects ?? [], workspaces: body.workspaces ?? [] });
       // Google Tasks sync: keep showing the last problem until a pass runs clean.
       const sync = body.sync as { ran?: boolean; error?: string; errors?: string[] } | null;
@@ -291,7 +291,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     mark(task.id, false);
   }
 
-  /** Changes a task at once on screen, then in SS Tasks; reloads either way. */
+  /** Changes a task at once on screen, then in Task Hub; reloads either way. */
   async function edit(task: Task, patch: Patch) {
     setError(null);
     const p = patch.project ? projects.find((x) => x.id === patch.project) : undefined;
@@ -466,7 +466,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   );
   const href = (t: Task) => `${appUrl}/p/${t.project_id}?task=${t.id}`;
 
-  /** One task: tick, title + chips (opens SS Tasks), ⋯ menu. */
+  /** One task: tick, title + chips (opens Task Hub), ⋯ menu. */
   function row(t: Task, card = false) {
     return (
       <div
@@ -518,14 +518,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       className={`flex min-w-0 flex-col bg-surface ${full ? "fixed inset-0 z-[60] overflow-y-auto p-4 sm:p-6" : "rounded-2xl border border-line p-4 shadow-sm"}`}
       aria-modal={full || undefined}
       role={full ? "dialog" : undefined}
-      aria-label={full ? "SS Tasks" : undefined}
+      aria-label={full ? "Task Hub" : undefined}
     >
       {/* Title row */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span aria-hidden className="text-lg">
           ✅
         </span>
-        <h2 className="mr-auto truncate font-semibold">SS Tasks</h2>
+        <h2 className="mr-auto truncate font-semibold">Task Hub</h2>
         <div className="flex rounded-xl bg-surface-2 p-0.5" role="group" aria-label="View">
           <button type="button" onClick={() => setPref({ view: "list" })} aria-pressed={prefs.view === "list"} className={segBtn(prefs.view === "list")}>
             ☰ List
@@ -592,7 +592,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
             👥 Share
           </button>
         )}
-        <a href={appUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open SS Tasks">
+        <a href={appUrl} target="_blank" rel="noopener noreferrer" className="rounded-full border border-line px-3 py-1 text-xs hover:bg-surface-2" title="Open Task Hub">
           Open ↗
         </a>
         <button
@@ -1232,7 +1232,7 @@ function TaskMenu({
       )}
       <div className="flex justify-between border-t border-line pt-2 text-xs">
         <a href={openHref} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-          Open in SS Tasks ↗
+          Open in Task Hub ↗
         </a>
         <button type="button" onClick={onClose} className="text-muted hover:text-fg">
           Close
@@ -1309,7 +1309,7 @@ function InviteLink({ appUrl, token, email }: { appUrl: string; token: string; e
   return (
     <div className="space-y-1 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
       <p>
-        <b>{email}</b> is not in SS Tasks yet. Send them this link — it is theirs as soon as they join:
+        <b>{email}</b> is not in Task Hub yet. Send them this link — it is theirs as soon as they join:
       </p>
       <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="w-full rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-fg" />
       <div className="flex gap-1.5">
@@ -1326,7 +1326,7 @@ function InviteLink({ appUrl, token, email }: { appUrl: string; token: string; e
           {copied ? "Copied ✓" : "Copy link"}
         </button>
         <a
-          href={`https://wa.me/?text=${encodeURIComponent(`You've been added to SS Tasks. Join here: ${link}`)}`}
+          href={`https://wa.me/?text=${encodeURIComponent(`You've been added to Task Hub. Join here: ${link}`)}`}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md border border-line px-2 py-0.5 text-fg hover:bg-surface"
