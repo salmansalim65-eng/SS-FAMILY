@@ -110,6 +110,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [panel, setPanel] = useState<"project" | "share" | null>(null);
+  const [fresh, setFresh] = useState<string[]>([]); // projects made from this panel, shown even while empty
   // Full screen: opening the board fills the screen; ✕ or Esc goes back to the panel.
   const [full, setFull] = useState(false);
   // Calendar view: month or week, the day it is anchored on, and per-day "+N more" / "+ add".
@@ -251,6 +252,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       g.tasks.push(t);
       map.set(t.project_id, g);
     }
+    // Empty projects too (a new team project, or one just made here), so tasks can be added to them —
+    // but not the many emptied Personal lists, and not while searching or filtering.
+    if (prefs.tab === "mine" && !q.trim() && filters.size === 0) {
+      for (const p of projects) {
+        if (map.has(p.id) || (p.workspace === "Personal" && !fresh.includes(p.id))) continue;
+        map.set(p.id, { key: p.id, label: p.name, sub: p.workspace, color: p.color || GRAY, tasks: [], droppable: true });
+      }
+    }
     // Projects with late work first, then by workspace and name.
     return [...map.values()]
       .map((g) => ({ ...g, tasks: g.tasks.sort(byDue) }))
@@ -259,7 +268,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           Number(lateCount(b.tasks) > 0) - Number(lateCount(a.tasks) > 0) || (a.sub ?? "").localeCompare(b.sub ?? "") || a.label.localeCompare(b.label),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, prefs.groupBy, todayS, weekS, peopleById]);
+  }, [shown, prefs.groupBy, prefs.tab, q, filters, projects, fresh, todayS, weekS, peopleById]);
 
   // List and board fold separately, so collapsing the list never shrinks the board.
   const foldKey = (g: string) => `${prefs.view}:${prefs.groupBy}:${g}`;
@@ -609,8 +618,9 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       {panel === "project" && (
         <NewProject
           workspaces={workspaces}
-          onDone={() => {
+          onDone={(id) => {
             setPanel(null);
+            setFresh((f) => [...f, id]);
             load(true);
           }}
         />
@@ -1377,7 +1387,7 @@ function AssignByEmail({ taskId, appUrl, onAssigned }: { taskId: string; appUrl:
 const PROJECT_COLORS = ["#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#f59e0b", "#22c55e", "#14b8a6", "#64748b"];
 
 /** "+ Project": name, workspace and colour. */
-function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: () => void }) {
+function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: (id: string) => void }) {
   const [name, setName] = useState("");
   const [ws, setWs] = useState(workspaces[0]?.id ?? "");
   const [color, setColor] = useState(PROJECT_COLORS[0]);
@@ -1393,7 +1403,7 @@ function NewProject({ workspaces, onDone }: { workspaces: Workspace[]; onDone: (
         const res = await addSsProject(ws, name, color);
         setBusy(false);
         if (!res.ok) return setError(res.error);
-        onDone();
+        onDone(res.id);
       }}
       className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-2"
     >
