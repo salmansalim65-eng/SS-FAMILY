@@ -243,3 +243,13 @@ export async function getSsProjectBoard(project: string): Promise<SsProjectBoard
   if (error) throw new Error(error.message);
   return data as SsProjectBoard;
 }
+
+export type SsBucketAction = "add" | "rename" | "left" | "right" | "delete";
+
+/** Adds, renames, moves or deletes (when empty) a column of a project (project owners only). */
+export async function editSsBucket(project: string, action: SsBucketAction, bucket: string | null, name: string | null) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_bucket_edit", { p_key: dashboardKey(), p_project: project, p_action: action, p_bucket: bucket, p_name: name })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}

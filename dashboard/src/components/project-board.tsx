@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { addSsTask, applyTask, assignTask, editSsTask, projectBoard, removeTask } from "@/app/sstasks/actions";
+import { addSsTask, applyTask, assignTask, editColumn, editSsTask, projectBoard, removeTask } from "@/app/sstasks/actions";
 import { TaskPanel } from "@/components/task-panel";
 import { karachiToday } from "@/lib/time";
 import type { SsBoardTask, SsProjectBoard } from "@/lib/sstasks";
@@ -50,6 +50,7 @@ export function ProjectBoard({
   const [over, setOver] = useState<string | null>(null);
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [colMenu, setColMenu] = useState<string | null>(null);
   const k = karachiToday();
   const today = `${k.y}-${String(k.m).padStart(2, "0")}-${String(k.d).padStart(2, "0")}`;
 
@@ -93,6 +94,19 @@ export function ProjectBoard({
     const res = await addSsTask(projectId, title, null, null);
     if (!res.ok) return setError(res.error);
     if (!first) await applyTask(res.id, { op: "set", bucket: bucketId });
+    await changed();
+  }
+
+  async function column(action: "add" | "rename" | "left" | "right" | "delete", bucketId: string | null, current?: string) {
+    setColMenu(null);
+    let name: string | null = null;
+    if (action === "add" || action === "rename") {
+      name = prompt(action === "add" ? "New column name" : "Column name", current ?? "");
+      if (!name?.trim()) return;
+    }
+    if (action === "delete" && !confirm(`Delete the column "${current}"? (Only an empty column can be deleted.)`)) return;
+    const res = await editColumn(projectId, action, bucketId, name);
+    if (!res.ok) return setError(res.error);
     await changed();
   }
 
@@ -216,9 +230,37 @@ export function ProjectBoard({
                 }}
                 className={`flex w-72 shrink-0 flex-col rounded-xl bg-surface-2/70 ${over === b.id ? "ring-2 ring-accent" : ""}`}
               >
-                <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{b.name}</h3>
+                <div className="relative flex items-center gap-2 px-3 pb-1 pt-2.5">
+                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold" title={b.name}>
+                    {b.name}
+                  </h3>
                   <span className="rounded-full bg-surface px-1.5 text-xs text-muted">{open.length}</span>
+                  {board.can_manage && (
+                    <button
+                      type="button"
+                      onClick={() => setColMenu((m) => (m === b.id ? null : b.id))}
+                      aria-label={`Column options: ${b.name}`}
+                      className="rounded px-1 text-sm font-bold leading-none text-muted hover:bg-surface hover:text-fg"
+                    >
+                      ⋯
+                    </button>
+                  )}
+                  {colMenu === b.id && (
+                    <div className="absolute right-2 top-9 z-10 w-44 overflow-hidden rounded-lg border border-line bg-surface text-sm shadow-xl">
+                      <button type="button" onClick={() => column("rename", b.id, b.name)} className="block w-full px-3 py-1.5 text-left hover:bg-surface-2">
+                        ✏️ Rename
+                      </button>
+                      <button type="button" onClick={() => column("left", b.id)} className="block w-full px-3 py-1.5 text-left hover:bg-surface-2">
+                        ← Move left
+                      </button>
+                      <button type="button" onClick={() => column("right", b.id)} className="block w-full px-3 py-1.5 text-left hover:bg-surface-2">
+                        → Move right
+                      </button>
+                      <button type="button" onClick={() => column("delete", b.id, b.name)} className="block w-full px-3 py-1.5 text-left text-danger hover:bg-danger-soft">
+                        🗑 Delete column
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <form
                   onSubmit={(e) => {
@@ -253,6 +295,15 @@ export function ProjectBoard({
               </section>
             );
           })}
+          {board.can_manage && (
+            <button
+              type="button"
+              onClick={() => column("add", null)}
+              className="h-fit w-56 shrink-0 rounded-xl border-2 border-dashed border-line px-3 py-3 text-left text-sm text-muted hover:border-accent hover:text-accent"
+            >
+              ＋ Add column
+            </button>
+          )}
         </div>
       )}
 
