@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsTaskDetail, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsMemberAction, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -218,6 +218,30 @@ export async function applyTask(id: string, op: SsTaskOp): Promise<{ ok: true } 
     await requireOwner();
     if (!UUID.test(id)) throw new Error("Unknown task.");
     await applySsTask(id, cleanOp(op));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function projectMembers(project: string): Promise<{ ok: true; data: SsProjectMembers } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project)) throw new Error("Unknown project.");
+    return { ok: true, data: await getSsProjectMembers(project) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+const MEMBER_ACTIONS: SsMemberAction[] = ["add", "remove", "owner", "member"];
+
+export async function setProjectMember(project: string, user: string, action: SsMemberAction): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project) || !UUID.test(user)) throw new Error("Unknown project or person.");
+    if (!MEMBER_ACTIONS.includes(action)) throw new Error("Unknown change.");
+    await setSsProjectMember(project, user, action);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
