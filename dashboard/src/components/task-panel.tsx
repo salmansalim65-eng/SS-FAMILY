@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { applyTask, taskDetail } from "@/app/sstasks/actions";
 import type { SsTaskDetail, SsTaskOp } from "@/lib/sstasks";
 
@@ -86,8 +87,10 @@ export function TaskPanel({
 
   const workspaces = [...new Set(projects.map((p) => p.workspace))];
 
-  return (
-    <div className="fixed inset-0 z-[65] flex justify-end bg-black/30" onClick={onClose}>
+  // Rendered at the end of <body>, so no card, board or full-screen wrapper can clip or cover it.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex justify-end bg-black/30" onClick={onClose}>
       <aside
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -330,6 +333,7 @@ export function TaskPanel({
           </>
         )}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }

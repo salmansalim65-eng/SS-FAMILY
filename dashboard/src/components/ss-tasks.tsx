@@ -523,7 +523,11 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     return (
       <div
         {...dragProps(t)}
-        className={`group relative flex cursor-grab items-start gap-2 active:cursor-grabbing ${
+        onClick={(e) => {
+          // A click anywhere on the card (not on its tick or ⋯ buttons) opens the task panel.
+          if (!(e.target as HTMLElement).closest("button, a, input")) setOpenTask(t.id);
+        }}
+        className={`group relative flex cursor-pointer items-start gap-2 ${
           card ? "rounded-lg border border-line bg-surface p-2 shadow-sm transition hover:shadow-md" : "px-3 py-1.5 hover:bg-surface-2"
         } ${dragId === t.id ? "opacity-40" : ""} ${busy.has(t.id) ? "animate-pulse" : ""}`}
       >
@@ -943,10 +947,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           </button>
           <button
             type="button"
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              setMenu((m) => (m?.id === t.id ? null : { id: t.id, rect }));
-            }}
+            onClick={() => setOpenTask(t.id)}
+            title="Open task"
             className={`min-w-0 flex-1 truncate text-left font-medium ${late ? "text-red-700 dark:text-red-300" : ""}`}
           >
             {t.priority === "urgent" && <span className="text-red-600">! </span>}
