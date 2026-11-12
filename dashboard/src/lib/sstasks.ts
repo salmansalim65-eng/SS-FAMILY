@@ -194,6 +194,7 @@ export type SsProjectMembers = {
   can_manage: boolean;
   me: string;
   members: { id: string; name: string; email: string; role: "owner" | "member"; guest: boolean }[];
+  invites?: { token: string; email: string; created_at: string }[];
   candidates: { id: string; name: string }[];
 };
 
@@ -250,6 +251,14 @@ export type SsBucketAction = "add" | "rename" | "left" | "right" | "delete";
 export async function editSsBucket(project: string, action: SsBucketAction, bucket: string | null, name: string | null) {
   const { error } = await projectClient("SSTASKS")
     .rpc("dashboard_bucket_edit", { p_key: dashboardKey(), p_project: project, p_action: action, p_bucket: bucket, p_name: name })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(error.message);
+}
+
+/** Cancels an invite link that hasn't been used yet. */
+export async function cancelSsInvite(token: string) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_invite_cancel", { p_key: dashboardKey(), p_token: token })
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
   if (error) throw new Error(error.message);
 }
