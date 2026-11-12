@@ -133,6 +133,12 @@ export function TaskPanel({
               className={`${field} text-base font-semibold`}
               aria-label="Title"
             />
+            {(d.created_by || d.created_at) && (
+              <p className="-mt-2 text-xs text-muted">
+                Created by <b className="font-medium text-fg">{d.created_by?.name ?? "Someone"}</b>
+                {d.created_at && <> · {when(d.created_at)}</>}
+              </p>
+            )}
 
             <div>
               <span className={label}>Project (move)</span>

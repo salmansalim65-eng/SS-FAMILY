@@ -26,3 +26,10 @@ export const dmy = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}/${ke
 export function daysLate(due: string) {
   return Math.round((Date.parse(`${todayKey()}T00:00:00Z`) - Date.parse(`${due}T00:00:00Z`)) / 86400000);
 }
+/** An ISO timestamp as "12/11/2026 14:05" in Pakistan time. */
+export function dmyTime(iso: string) {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString("en-GB", { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = d.toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+  return `${day} ${time}`;
+}
