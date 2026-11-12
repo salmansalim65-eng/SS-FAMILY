@@ -100,6 +100,8 @@ export type SsTaskDetail = {
   checklist: { id: string; title: string; done: boolean }[];
   comments: { id: string; body: string; created_at: string; mine: boolean; name: string }[];
   attachments?: { id: string; name: string; size: number | null; created_at: string }[];
+  created_by?: { id: string; name: string } | null;
+  created_at?: string;
   can_delete: boolean;
 };
 export type SsTaskOp =

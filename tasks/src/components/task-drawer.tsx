@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ago, dmy } from "@/lib/dates";
+import { ago, dmy, dmyTime } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 import { PRIORITIES, type Bucket, type ChecklistItem, type Comment, type Priority, type Profile, type Task } from "@/lib/types";
 import { Attachments } from "./attachments";
@@ -228,6 +228,10 @@ export function TaskDrawer({
                 <input type="date" value={task.due_date ?? ""} onChange={(e) => changeDue(e.target.value)} className={field} />
               </label>
             </div>
+
+            <p className="text-xs text-muted">
+              Created by <b className="font-medium text-fg">{people.get(task.created_by)?.full_name || people.get(task.created_by)?.email || "Someone"}</b> · {dmyTime(task.created_at)}
+            </p>
 
             {moves.length > 0 && (
               <details className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
