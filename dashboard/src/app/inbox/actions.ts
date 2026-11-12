@@ -6,6 +6,7 @@ import { requireOwner } from "@/lib/supabase/server";
 export type InboxResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
 
 const UUID = /^[0-9a-f-]{36}$/i;
+const MBL_ALERT_KEY = /^[a-z_]+:[0-9a-f-]{36}(:[^\u0000-\u001f]{1,300})?$/i;
 
 async function attempt<T>(fn: () => Promise<T>): Promise<InboxResult<T>> {
   try {
@@ -29,7 +30,8 @@ export async function actOnInboxItem(project: string, id: string, action: string
 export async function readInboxAlert(project: string, id: string | null) {
   return attempt(async () => {
     if (!isInboxProject(project)) throw new Error("Unknown project.");
-    if (id !== null && !UUID.test(id)) throw new Error("Unknown alert.");
+    // SSA / RMI alerts are uuids; MBL's are its bell's alert keys ("info:<uuid>", …).
+    if (id !== null && !(UUID.test(id) || (project === "MBL" && MBL_ALERT_KEY.test(id)))) throw new Error("Unknown alert.");
     await markAlertRead(project, id);
   });
 }

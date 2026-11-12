@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ProjectBoard } from "@/components/project-board";
 import { TaskPanel } from "@/components/task-panel";
-import { addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, projectMembers, removeProject, removeTask, setProjectMember, shareProject, tickSsTask } from "@/app/sstasks/actions";
+import { cancelInvite, addSsProject, addSsTask, assignTask, assignTaskByEmail, editSsTask, projectMembers, removeProject, removeTask, setProjectMember, shareProject, tickSsTask } from "@/app/sstasks/actions";
 import { onDashboardRefresh } from "@/lib/refresh-event";
 import { addDays, karachiToday } from "@/lib/time";
 import type { CalendarEvent } from "@/lib/types";
@@ -758,7 +758,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           onCancel={() => setPanel(null)}
         />
       )}
-      {panel === "share" && <ShareProject projects={projects} appUrl={appUrl} onChanged={() => load(true)} />}
+      {panel === "share" && <ShareProject projects={projects} appUrl={appUrl} onChanged={() => load(true)} onClose={() => setPanel(null)} />}
       {openTask &&
         (() => {
           const t = tasks.find((x) => x.id === openTask);
@@ -1779,9 +1779,11 @@ function AddTask({ projects, initialProject, onAdded }: { projects: Project[]; i
 }
 
 /** Shows an invite link with Copy and WhatsApp buttons. */
-function InviteLink({ appUrl, token, email }: { appUrl: string; token: string; email: string }) {
+function InviteLink({ appUrl, token, email, onCancelled }: { appUrl: string; token: string; email: string; onCancelled?: () => void }) {
   const link = `${appUrl.replace(/\/$/, "")}/join/${token}`;
   const [copied, setCopied] = useState(false);
+  const [cancelled, setCancelled] = useState<string | null>(null);
+  if (cancelled) return <p className="rounded-lg bg-surface-2 p-2 text-xs text-muted">{cancelled}</p>;
   return (
     <div className="space-y-1 rounded-lg bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
       <p>
@@ -1809,6 +1811,19 @@ function InviteLink({ appUrl, token, email }: { appUrl: string; token: string; e
         >
           WhatsApp
         </a>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!confirm(`Cancel the invite for ${email}? The link will stop working.`)) return;
+            const res = await cancelInvite(token);
+            if (!res.ok) return alert(res.error);
+            setCancelled(`Invite for ${email} cancelled — the link no longer works.`);
+            onCancelled?.();
+          }}
+          className="ml-auto rounded-md border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger-soft"
+        >
+          ✕ Cancel invite
+        </button>
       </div>
     </div>
   );
@@ -1908,7 +1923,7 @@ function NewProject({ workspaces, onDone, onCancel }: { workspaces: Workspace[];
 }
 
 /** "Share": give someone access to a project by email (or an invite link). */
-function ShareProject({ projects, appUrl, onChanged }: { projects: Project[]; appUrl: string; onChanged: () => void }) {
+function ShareProject({ projects, appUrl, onChanged, onClose }: { projects: Project[]; appUrl: string; onChanged: () => void; onClose: () => void }) {
   const [project, setProject] = useState(projects[0]?.id ?? "");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1950,6 +1965,9 @@ function ShareProject({ projects, appUrl, onChanged }: { projects: Project[]; ap
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email to share with…" className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
         <button type="submit" disabled={busy || !email.trim()} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
           {busy ? "Sharing…" : "Share"}
+        </button>
+        <button type="button" onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface-2">
+          Close
         </button>
       </form>
       {people.length > 0 && <p className="text-xs text-muted">On this project: {people.map((p) => p.name).join(", ")}</p>}
@@ -2076,6 +2094,34 @@ function MembersPanel({
                 </li>
               ))}
             </ul>
+
+            {(d.invites ?? []).length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted">Invited — not joined yet</p>
+                <ul className="divide-y divide-line rounded-xl border border-dashed border-line">
+                  {(d.invites ?? []).map((i) => (
+                    <li key={i.token} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                      <span className="min-w-0 flex-1 truncate">✉️ {i.email}</span>
+                      {d.can_manage && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={async () => {
+                            if (!confirm(`Cancel the invite for ${i.email}? The link will stop working.`)) return;
+                            const res = await cancelInvite(i.token);
+                            if (!res.ok) return setMsg({ error: res.error });
+                            await load();
+                          }}
+                          className="rounded-md border border-danger/40 px-1.5 py-0.5 text-[11px] text-danger hover:bg-danger-soft"
+                        >
+                          Cancel invite
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {d.can_manage ? (
               <div className="space-y-2">
