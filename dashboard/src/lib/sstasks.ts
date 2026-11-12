@@ -260,5 +260,9 @@ export async function cancelSsInvite(token: string) {
   const { error } = await projectClient("SSTASKS")
     .rpc("dashboard_invite_cancel", { p_key: dashboardKey(), p_token: token })
     .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Until migration 20261112090000 is applied to Task Hub.
+    if (/could not find the function|schema cache/i.test(error.message)) throw new Error("Cancelling invites starts working after a Task Hub update — the link expires by itself in 14 days.");
+    throw new Error(error.message);
+  }
 }
