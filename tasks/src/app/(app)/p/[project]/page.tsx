@@ -23,6 +23,7 @@ function Board() {
   const [showSettings, setShowSettings] = useState(false);
   const [open, setOpen] = useState<string | null>(search.get("task"));
   const [over, setOver] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState<Record<string, boolean>>({}); // completed tasks open, per column
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -241,7 +242,9 @@ function Board() {
       )}
       <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
         {buckets.map((b) => {
-          const list = tasks.filter((t) => t.bucket_id === b.id);
+          const all = tasks.filter((t) => t.bucket_id === b.id);
+          const list = all.filter((t) => !t.done);
+          const done = all.filter((t) => t.done);
           return (
             <section
               key={b.id}
@@ -289,6 +292,26 @@ function Board() {
                     onToggle={() => toggle(t)}
                   />
                 ))}
+                {done.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowDone((s) => ({ ...s, [b.id]: !s[b.id] }))}
+                      className="w-full rounded-lg px-2 py-1 text-left text-xs text-muted hover:bg-surface hover:text-fg"
+                    >
+                      {showDone[b.id] ? "▾" : "▸"} Completed tasks ({done.length})
+                    </button>
+                    {showDone[b.id] &&
+                      done.map((t) => (
+                        <TaskCard
+                          key={t.id}
+                          task={t}
+                          onOpen={() => setOpen(t.id)}
+                          onToggle={() => toggle(t)}
+                        />
+                      ))}
+                  </>
+                )}
               </div>
             </section>
           );
