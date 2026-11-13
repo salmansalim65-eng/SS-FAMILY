@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, cancelSsInvite, moveSsBucket, placeSsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, cancelSsInvite, createSsBucket, saveSsBucket, moveSsBucket, placeSsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -309,6 +309,48 @@ export async function moveColumnTo(project: string, bucket: string, before: stri
     await requireOwner();
     if (!UUID.test(project) || !UUID.test(bucket) || (before !== null && !UUID.test(before))) throw new Error("Unknown project or column.");
     await moveSsBucket(project, bucket, before);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanBucket(name: string, due: string | null, members: string[]) {
+  const n = String(name ?? "").trim().slice(0, 80);
+  if (!n) throw new Error("Give the bucket a name.");
+  if (due && !DATE.test(due)) throw new Error("Unknown date.");
+  const m = [...new Set((members ?? []).map(String))];
+  if (m.length > 50 || m.some((x) => !UUID.test(x))) throw new Error("Unknown member.");
+  return { n, d: due || null, m };
+}
+
+export async function createBucket(
+  project: string,
+  name: string,
+  due: string | null,
+  members: string[],
+  tasks: string[],
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project)) throw new Error("Unknown project.");
+    const { n, d, m } = cleanBucket(name, due, members);
+    const t = (tasks ?? []).map((x) => String(x).trim().slice(0, 300)).filter(Boolean);
+    if (t.length > 100) throw new Error("Too many tasks at once.");
+    return { ok: true, id: await createSsBucket(project, n, d, m, t) };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function saveBucket(project: string, bucket: string, name: string, due: string | null, members: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project) || !UUID.test(bucket)) throw new Error("Unknown project or bucket.");
+    const { n, d, m } = cleanBucket(name, due, members);
+    await saveSsBucket(project, bucket, n, d, m);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };

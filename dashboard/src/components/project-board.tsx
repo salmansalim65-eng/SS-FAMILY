@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { addSsTask, applyTask, assignTask, editColumn, editSsTask, moveColumnTo, placeTask, projectBoard, removeTask } from "@/app/sstasks/actions";
+import { addSsTask, applyTask, assignTask, createBucket, editColumn, editSsTask, moveColumnTo, placeTask, projectBoard, removeTask, saveBucket } from "@/app/sstasks/actions";
 import { TaskPanel } from "@/components/task-panel";
 import { karachiToday } from "@/lib/time";
 import type { SsBoardTask, SsProjectBoard } from "@/lib/sstasks";
@@ -58,6 +58,8 @@ export function ProjectBoard({
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [colMenu, setColMenu] = useState<string | null>(null);
+  // The new-bucket / bucket-settings window: null, a new one, or an existing bucket's id.
+  const [bucketForm, setBucketForm] = useState<"new" | string | null>(null);
   const k = karachiToday();
   const today = `${k.y}-${String(k.m).padStart(2, "0")}-${String(k.d).padStart(2, "0")}`;
 
@@ -108,10 +110,10 @@ export function ProjectBoard({
     setColMenu(null);
     let name: string | null = null;
     if (action === "add" || action === "rename") {
-      name = prompt(action === "add" ? "New column name" : "Column name", current ?? "");
+      name = prompt(action === "add" ? "New bucket name" : "Bucket name", current ?? "");
       if (!name?.trim()) return;
     }
-    if (action === "delete" && !confirm(`Delete the column "${current}"? (Only an empty column can be deleted.)`)) return;
+    if (action === "delete" && !confirm(`Delete the bucket "${current}"? (Only an empty bucket can be deleted.)`)) return;
     const res = await editColumn(projectId, action, bucketId, name);
     if (!res.ok) return setError(res.error);
     await changed();
@@ -165,6 +167,8 @@ export function ProjectBoard({
     });
     await run(moveColumnTo(projectId, id, before));
   }
+
+  const nameOf = (id: string) => board?.people?.find((p) => p.id === id)?.name ?? "Someone";
 
   const colOfId = (t: SsBoardTask) =>
     t.bucket_id && (board?.buckets ?? []).some((b) => b.id === t.bucket_id) ? t.bucket_id : board?.buckets[0]?.id;
@@ -333,8 +337,15 @@ export function ProjectBoard({
                   )}
                   {colMenu === b.id && (
                     <div className="absolute right-2 top-9 z-10 w-44 overflow-hidden rounded-lg border border-line bg-surface text-sm shadow-xl">
-                      <button type="button" onClick={() => column("rename", b.id, b.name)} className="block w-full px-3 py-1.5 text-left hover:bg-surface-2">
-                        ✏️ Rename
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setColMenu(null);
+                          setBucketForm(b.id);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left hover:bg-surface-2"
+                      >
+                        ⚙ Name, due date &amp; members
                       </button>
                       <button type="button" onClick={() => column("left", b.id)} className="block w-full px-3 py-1.5 text-left hover:bg-surface-2">
                         ← Move left
@@ -343,11 +354,33 @@ export function ProjectBoard({
                         → Move right
                       </button>
                       <button type="button" onClick={() => column("delete", b.id, b.name)} className="block w-full px-3 py-1.5 text-left text-danger hover:bg-danger-soft">
-                        🗑 Delete column
+                        🗑 Delete bucket
                       </button>
                     </div>
                   )}
                 </div>
+                {(b.due || (b.members ?? []).length > 0) && (
+                  <div className="flex flex-wrap items-center gap-1.5 px-3 pt-1.5 text-xs">
+                    {b.due && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${b.due < today ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200" : "bg-surface text-muted"}`}
+                        title="Bucket due date"
+                      >
+                        {b.due < today ? "⚠ " : "📅 "}
+                        {dueFmt.format(new Date(`${b.due}T00:00:00Z`))}
+                      </span>
+                    )}
+                    {(b.members ?? []).length > 0 && (
+                      <span className="ml-auto flex -space-x-1" title={`Bucket members: ${(b.members ?? []).map((id) => nameOf(id)).join(", ")}`}>
+                        {(b.members ?? []).slice(0, 5).map((id) => (
+                          <span key={id} className="grid size-[22px] place-items-center rounded-full border-2 border-surface text-[9px] font-semibold text-white" style={{ backgroundColor: cc }}>
+                            {initialsOf(nameOf(id))}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -411,13 +444,27 @@ export function ProjectBoard({
                 e.preventDefault();
                 if (dragCol) void dropColumn(null);
               }}
-              onClick={() => column("add", null)}
+              onClick={() => setBucketForm("new")}
               className="h-fit w-56 shrink-0 rounded-xl border-2 border-dashed border-line px-3 py-3 text-left text-sm text-muted hover:border-accent hover:text-accent"
             >
-              ＋ Add column
+              ＋ Add bucket
             </button>
           )}
         </div>
+      )}
+
+      {bucketForm && board && (
+        <BucketForm
+          key={bucketForm}
+          projectId={projectId}
+          bucket={bucketForm === "new" ? null : (board.buckets.find((b) => b.id === bucketForm) ?? null)}
+          people={board.people ?? []}
+          onClose={() => setBucketForm(null)}
+          onSaved={async () => {
+            setBucketForm(null);
+            await changed();
+          }}
+        />
       )}
 
       {openTask && (
@@ -445,5 +492,113 @@ export function ProjectBoard({
       )}
     </div>,
     document.body,
+  );
+}
+
+/** New bucket (name, due date, members and its tasks) or an existing bucket's settings. */
+function BucketForm({
+  projectId,
+  bucket,
+  people,
+  onClose,
+  onSaved,
+}: {
+  projectId: string;
+  bucket: SsProjectBoard["buckets"][number] | null;
+  people: { id: string; name: string; email: string }[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
+  const [name, setName] = useState(bucket?.name ?? "");
+  const [due, setDue] = useState(bucket?.due ?? "");
+  const [members, setMembers] = useState<string[]>(bucket?.members ?? []);
+  const [tasks, setTasks] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = bucket
+      ? await saveBucket(projectId, bucket.id, name, due || null, members)
+      : await createBucket(projectId, name, due || null, members, tasks.split("\n"));
+    setBusy(false);
+    if (!res.ok) return setError(res.error);
+    await onSaved();
+  }
+
+  const field = "w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-accent";
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/30 p-4" onClick={onClose}>
+      <form
+        onSubmit={save}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label={bucket ? "Bucket settings" : "New bucket"}
+        className="max-h-[85dvh] w-full max-w-md space-y-3 overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="flex-1 font-semibold">{bucket ? "⚙ Bucket settings" : "＋ New bucket"}</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded px-1.5 text-muted hover:text-fg">
+            ✕
+          </button>
+        </div>
+        <label className="block space-y-1">
+          <span className="text-xs text-muted">Name</span>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Hifz admissions" className={field} />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-muted">Due date (optional — the whole bucket)</span>
+          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className={field} />
+        </label>
+        <div className="space-y-1">
+          <span className="text-xs text-muted">Members — they see every task in this bucket</span>
+          {people.length === 0 ? (
+            <p className="text-xs text-muted">Add people to the project first (👥 Members).</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {people.map((p) => {
+                const on = members.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setMembers((m) => (on ? m.filter((x) => x !== p.id) : [...m, p.id]))}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-accent bg-accent/10 font-medium text-accent" : "border-line hover:bg-surface-2"}`}
+                  >
+                    {p.name}
+                    {on && " ✓"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {!bucket && (
+          <label className="block space-y-1">
+            <span className="text-xs text-muted">Tasks — one per line (not assigned to anyone; they take the bucket&apos;s due date)</span>
+            <textarea value={tasks} onChange={(e) => setTasks(e.target.value)} rows={5} placeholder={"Collect forms\nCheck documents\nMake the list"} className={field} />
+          </label>
+        )}
+        {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-surface-2">
+            Cancel
+          </button>
+          <button type="submit" disabled={busy || !name.trim()} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+            {busy ? "Saving…" : bucket ? "Save" : "Create bucket"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

@@ -750,6 +750,8 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       {panel === "project" && (
         <NewProject
           workspaces={workspaces}
+          projects={projects}
+          appUrl={appUrl}
           onDone={(id) => {
             setPanel(null);
             setFresh((f) => [...f, id]);
@@ -1868,12 +1870,55 @@ function AssignByEmail({ taskId, appUrl, onAssigned }: { taskId: string; appUrl:
 const PROJECT_COLORS = ["#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#f59e0b", "#22c55e", "#14b8a6", "#64748b"];
 
 /** "+ Project": name, workspace and colour. */
-function NewProject({ workspaces, onDone, onCancel }: { workspaces: Workspace[]; onDone: (id: string) => void; onCancel: () => void }) {
+function NewProject({
+  workspaces,
+  projects,
+  appUrl,
+  onDone,
+  onCancel,
+}: {
+  workspaces: Workspace[];
+  projects: Project[];
+  appUrl: string;
+  onDone: (id: string) => void;
+  onCancel: () => void;
+}) {
   const [name, setName] = useState("");
   const [ws, setWs] = useState(workspaces[0]?.id ?? "");
   const [color, setColor] = useState(PROJECT_COLORS[0]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [emails, setEmails] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // After creating: invite links to hand out and anyone who couldn't be added.
+  const [after, setAfter] = useState<{ id: string; invites: { token: string; email: string }[]; problems: string[] } | null>(null);
+
+  // People already working in this workspace (from its projects) to add with one click.
+  const wsName = workspaces.find((w) => w.id === ws)?.name;
+  const people = [...new Map(projects.filter((p) => p.workspace === wsName).flatMap((p) => p.people ?? []).map((x) => [x.id, x])).values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const toggle = (id: string) => setPicked((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
+
+  if (after) {
+    return (
+      <div className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-3">
+        <p className="text-sm font-medium">✅ Project created.</p>
+        {after.problems.map((p) => (
+          <p key={p} className="text-xs text-danger">
+            {p}
+          </p>
+        ))}
+        {after.invites.map((i) => (
+          <InviteLink key={i.token} appUrl={appUrl} token={i.token} email={i.email} />
+        ))}
+        <button type="button" onClick={() => onDone(after.id)} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white">
+          Done
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form
       onSubmit={async (e) => {
@@ -1882,21 +1927,72 @@ function NewProject({ workspaces, onDone, onCancel }: { workspaces: Workspace[];
         setBusy(true);
         setError(null);
         const res = await addSsProject(ws, name, color);
+        if (!res.ok) {
+          setBusy(false);
+          return setError(res.error);
+        }
+        const invites: { token: string; email: string }[] = [];
+        const problems: string[] = [];
+        for (const id of picked) {
+          const r = await setProjectMember(res.id, id, "add");
+          if (!r.ok) problems.push(`${people.find((x) => x.id === id)?.name ?? "Someone"}: ${r.error}`);
+        }
+        for (const email of emails.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean)) {
+          const r = await shareProject(res.id, email);
+          if (!r.ok) problems.push(`${email}: ${r.error}`);
+          else if (r.data.status === "invited") invites.push({ token: r.data.token, email: r.data.email });
+        }
         setBusy(false);
-        if (!res.ok) return setError(res.error);
-        onDone(res.id);
+        if (invites.length || problems.length) setAfter({ id: res.id, invites, problems });
+        else onDone(res.id);
       }}
       className="mb-3 space-y-2 rounded-xl border border-line bg-surface-2/60 p-2"
     >
       <div className="flex flex-wrap gap-2">
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onCancel()} placeholder="New project name…" maxLength={120} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm" />
-        <select value={ws} onChange={(e) => setWs(e.target.value)} aria-label="Workspace" className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm">
+        <select
+          value={ws}
+          onChange={(e) => {
+            setWs(e.target.value);
+            setPicked([]);
+          }}
+          aria-label="Workspace"
+          className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
+        >
           {workspaces.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
             </option>
           ))}
         </select>
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium text-muted">👥 Members</p>
+        {people.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {people.map((x) => {
+              const on = picked.includes(x.id);
+              return (
+                <button
+                  key={x.id}
+                  type="button"
+                  onClick={() => toggle(x.id)}
+                  aria-pressed={on}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-accent bg-accent/10 font-medium text-accent" : "border-line hover:bg-surface"}`}
+                >
+                  {x.name}
+                  {on && " ✓"}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <input
+          value={emails}
+          onChange={(e) => setEmails(e.target.value)}
+          placeholder="…or add by email (separate with commas)"
+          className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm"
+        />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {PROJECT_COLORS.map((c) => (

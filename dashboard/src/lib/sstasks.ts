@@ -234,7 +234,8 @@ export type SsBoardTask = {
 export type SsProjectBoard = {
   project: { id: string; name: string; color: string | null; workspace: string };
   can_manage: boolean;
-  buckets: { id: string; name: string }[];
+  buckets: { id: string; name: string; due?: string | null; members?: string[] }[];
+  people?: { id: string; name: string; email: string }[];
   tasks: SsBoardTask[];
 };
 
@@ -291,4 +292,23 @@ export async function moveSsBucket(project: string, bucket: string, before: stri
     if (/could not find the function|schema cache/i.test(error.message)) throw new Error("Dragging to a new place starts working after a Task Hub update — moving between columns with the task's menu still works.");
     throw new Error(error.message);
   }
+}
+
+const MIGRATION_HINT = /could not find the function|schema cache/i;
+
+/** A new bucket with its due date, members and tasks (the tasks start unassigned). */
+export async function createSsBucket(project: string, name: string, due: string | null, members: string[], tasks: string[]): Promise<string> {
+  const { data, error } = await projectClient("SSTASKS")
+    .rpc("dashboard_bucket_create", { p_key: dashboardKey(), p_project: project, p_name: name, p_due: due, p_members: members, p_tasks: tasks })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(MIGRATION_HINT.test(error.message) ? "Buckets with members and due dates start working after a Task Hub update." : error.message);
+  return data as string;
+}
+
+/** A bucket's name, due date and members. */
+export async function saveSsBucket(project: string, bucket: string, name: string, due: string | null, members: string[]) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_bucket_settings", { p_key: dashboardKey(), p_project: project, p_bucket: bucket, p_name: name, p_due: due, p_members: members })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) throw new Error(MIGRATION_HINT.test(error.message) ? "Bucket members and due dates start working after a Task Hub update." : error.message);
 }
