@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, projectPeople, useAppData } from "@/components/data";
 import { drag, TASK_SELECT, TaskCard } from "@/components/task-card";
 import { TaskDrawer } from "@/components/task-drawer";
+import { dmy, todayKey } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 
 // One colour per column, in order (repeats after the last) — the same as the dashboard's board.
@@ -200,7 +201,7 @@ function Board() {
   }
 
   async function addBucket() {
-    const name = prompt("New column name");
+    const name = prompt("New bucket name");
     if (!name?.trim()) return;
     const { error } = await supabase()
       .from("buckets")
@@ -227,7 +228,7 @@ function Board() {
     const n = tasks.filter((t) => t.bucket_id === b.id).length;
     if (
       !confirm(
-        `Delete the column "${b.name}"?${n ? ` Its ${n} task${n === 1 ? "" : "s"} move to the first column.` : ""}`,
+        `Delete the bucket "${b.name}"?${n ? ` Its ${n} task${n === 1 ? "" : "s"} move to the first bucket.` : ""}`,
       )
     )
       return;
@@ -333,7 +334,7 @@ function Board() {
                 className="flex cursor-grab items-center gap-2 rounded-t-xl px-3 pb-2 pt-2.5 active:cursor-grabbing"
                 style={{ backgroundColor: `color-mix(in srgb, ${cc} 16%, transparent)` }}
                 draggable
-                title="Drag to move the column"
+                title="Drag to move the bucket"
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", b.name);
@@ -364,6 +365,13 @@ function Board() {
                   ✕
                 </button>
               </div>
+              {b.due_date && (
+                <p className="px-3 pt-1 text-xs">
+                  <span className={`rounded-full px-2 py-0.5 font-medium ${b.due_date < todayKey() ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200" : "bg-surface text-muted"}`}>
+                    {b.due_date < todayKey() ? "⚠ " : "📅 "}Bucket due {dmy(b.due_date)}
+                  </span>
+                </p>
+              )}
               <AddTask onAdd={(title) => addTask(b, title)} />
               <div className="min-h-10 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
                 {list.map((t, i) => (
@@ -423,7 +431,7 @@ function Board() {
           onClick={addBucket}
           className="w-56 shrink-0 rounded-2xl border-2 border-dashed border-line px-3 py-3 text-sm text-muted hover:text-fg"
         >
-          ＋ Add column
+          ＋ Add bucket
         </button>
       </div>
       {showSettings && (

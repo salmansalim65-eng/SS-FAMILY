@@ -41,10 +41,16 @@ export default function MyTasks() {
     if (!me) return;
     const sb = supabase();
     if (view === "mine") {
-      const { data: mine } = await sb.from("task_assignees").select("task_id").eq("user_id", me.id);
+      const [{ data: mine }, { data: made }] = await Promise.all([
+        sb.from("task_assignees").select("task_id").eq("user_id", me.id),
+        // Tasks I made and haven't given to anyone are mine too.
+        sb.from("tasks").select(TASK_SELECT).eq("created_by", me.id).eq("done", false),
+      ]);
       const ids = (mine ?? []).map((x) => x.task_id as string);
       const { data } = ids.length ? await sb.from("tasks").select(TASK_SELECT).in("id", ids).eq("done", false) : { data: [] };
-      setTasks((data ?? []) as Task[]);
+      const unassigned = ((made ?? []) as Task[]).filter((t) => (t.task_assignees ?? []).length === 0);
+      const all = [...((data ?? []) as Task[]), ...unassigned.filter((t) => !ids.includes(t.id))];
+      setTasks(all);
     } else {
       const { data } = await sb.from("tasks").select(TASK_SELECT).eq("created_by", me.id).eq("done", false);
       setTasks(((data ?? []) as Task[]).filter((t) => (t.task_assignees ?? []).some((a) => a.user_id !== me.id)));
