@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, cancelSsInvite, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { applySsTask, cancelSsInvite, moveSsBucket, placeSsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -285,6 +285,30 @@ export async function cancelInvite(token: string): Promise<{ ok: true } | { ok: 
     await requireOwner();
     if (!/^[0-9a-f]{16,64}$/i.test(String(token))) throw new Error("Unknown invite.");
     await cancelSsInvite(token);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+/** Drag and drop on the project board: a task into a column, before another task. */
+export async function placeTask(task: string, bucket: string, before: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(task) || !UUID.test(bucket) || (before !== null && !UUID.test(before))) throw new Error("Unknown task or column.");
+    await placeSsTask(task, bucket, before);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+/** Drag and drop on the project board: a column before another one (or last). */
+export async function moveColumnTo(project: string, bucket: string, before: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!UUID.test(project) || !UUID.test(bucket) || (before !== null && !UUID.test(before))) throw new Error("Unknown project or column.");
+    await moveSsBucket(project, bucket, before);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };

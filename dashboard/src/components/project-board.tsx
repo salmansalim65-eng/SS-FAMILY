@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { addSsTask, applyTask, assignTask, editColumn, editSsTask, projectBoard, removeTask } from "@/app/sstasks/actions";
+import { addSsTask, applyTask, assignTask, editColumn, editSsTask, moveColumnTo, placeTask, projectBoard, removeTask } from "@/app/sstasks/actions";
 import { TaskPanel } from "@/components/task-panel";
 import { karachiToday } from "@/lib/time";
 import type { SsBoardTask, SsProjectBoard } from "@/lib/sstasks";
@@ -10,6 +10,8 @@ import type { SsBoardTask, SsProjectBoard } from "@/lib/sstasks";
 type Project = { id: string; name: string; workspace: string };
 
 const GRAY = "#94a3b8";
+// One colour per column, in order (repeats after the last).
+const COLUMN_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#e11d48"];
 const tint = (hex: string, pct: number) => `color-mix(in srgb, ${hex} ${pct}%, transparent)`;
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 const PRI: Record<string, { label: string; chip: string }> = {
@@ -48,6 +50,11 @@ export function ProjectBoard({
   const [openTask, setOpenTask] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  // Where a dragged task would land: before the open task at `index` in that column.
+  const [dropAt, setDropAt] = useState<{ bucket: string; index: number } | null>(null);
+  // A column being dragged, and the column it would go before.
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const [colOver, setColOver] = useState<string | null>(null);
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [colMenu, setColMenu] = useState<string | null>(null);
@@ -110,13 +117,65 @@ export function ProjectBoard({
     await changed();
   }
 
+  /** Drops the dragged task into a column before the open task at `index` (or last). */
+  function dropTask(bucketId: string, index: number | undefined) {
+    const id = dragId;
+    setDragId(null);
+    setOver(null);
+    setDropAt(null);
+    if (!id || !board) return;
+    const t = board.tasks.find((x) => x.id === id);
+    if (!t) return;
+    const list = board.tasks.filter((x) => colOfId(x) === bucketId && !x.done && x.id !== id);
+    const at = Math.max(0, Math.min(index ?? list.length, list.length));
+    const before = list[at]?.id ?? null;
+    if (colOfId(t) === bucketId) {
+      const cur = board.tasks.filter((x) => colOfId(x) === bucketId && !x.done);
+      const i = cur.findIndex((x) => x.id === id);
+      if ((cur[i + 1]?.id ?? null) === before) return; // dropped where it already is
+    }
+    // Show the new order at once; the board reloads after the save.
+    setBoard((b) => {
+      if (!b) return b;
+      const rest = b.tasks.filter((x) => x.id !== id);
+      const moved = { ...t, bucket_id: bucketId, done: (b.buckets.find((c) => c.id === bucketId)?.name ?? "").toLowerCase() === "done" ? true : t.done };
+      const pos = before ? rest.findIndex((x) => x.id === before) : -1;
+      if (pos < 0) {
+        const lastInCol = rest.map((x, i) => (colOfId(x) === bucketId && !x.done ? i : -1)).filter((i) => i >= 0).pop();
+        rest.splice(lastInCol === undefined ? rest.length : lastInCol + 1, 0, moved);
+      } else rest.splice(pos, 0, moved);
+      return { ...b, tasks: rest };
+    });
+    run(placeTask(id, bucketId, before));
+  }
+
+  /** Puts the dragged column before `before` (or last). */
+  async function dropColumn(before: string | null) {
+    const id = dragCol;
+    setDragCol(null);
+    setColOver(null);
+    if (!id || id === before || !board) return;
+    setBoard((b) => {
+      if (!b) return b;
+      const moved = b.buckets.find((x) => x.id === id)!;
+      const rest = b.buckets.filter((x) => x.id !== id);
+      const at = before ? rest.findIndex((x) => x.id === before) : rest.length;
+      rest.splice(at < 0 ? rest.length : at, 0, moved);
+      return { ...b, buckets: rest };
+    });
+    await run(moveColumnTo(projectId, id, before));
+  }
+
+  const colOfId = (t: SsBoardTask) =>
+    t.bucket_id && (board?.buckets ?? []).some((b) => b.id === t.bucket_id) ? t.bucket_id : board?.buckets[0]?.id;
+
   if (typeof document === "undefined") return null;
   const color = board?.project.color || GRAY;
   const buckets = board?.buckets ?? [];
   const firstId = buckets[0]?.id;
   const colOf = (t: SsBoardTask) => (t.bucket_id && buckets.some((b) => b.id === t.bucket_id) ? t.bucket_id : firstId);
 
-  const card = (t: SsBoardTask) => {
+  const card = (t: SsBoardTask, colColor = GRAY) => {
     const late = !t.done && !!t.due && t.due < today;
     const pri = t.priority ? PRI[t.priority] : undefined;
     return (
@@ -131,11 +190,13 @@ export function ProjectBoard({
         onDragEnd={() => {
           setDragId(null);
           setOver(null);
+          setDropAt(null);
         }}
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("button, input")) setOpenTask(t.id);
         }}
-        className={`group flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-surface p-2.5 shadow-sm transition hover:shadow-md ${dragId === t.id ? "opacity-40" : ""}`}
+        style={{ borderLeft: `4px solid ${t.done ? GRAY : colColor}` }}
+        className={`group flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-surface p-2.5 shadow-sm transition hover:-translate-y-px hover:shadow-md ${dragId === t.id ? "opacity-40" : ""}`}
       >
         <button
           type="button"
@@ -206,7 +267,8 @@ export function ProjectBoard({
 
       {board && (
         <div className="flex flex-1 gap-3 overflow-x-auto p-4 [scrollbar-width:thin]">
-          {buckets.map((b) => {
+          {buckets.map((b, bi) => {
+            const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
             const all = board.tasks.filter((t) => colOf(t) === b.id);
             const open = all.filter((t) => !t.done);
             const done = all.filter((t) => t.done);
@@ -214,27 +276,51 @@ export function ProjectBoard({
               <section
                 key={b.id}
                 onDragOver={(e) => {
+                  if (dragCol) {
+                    e.preventDefault();
+                    setColOver(b.id);
+                    return;
+                  }
                   if (!dragId) return;
                   e.preventDefault();
                   setOver(b.id);
                 }}
-                onDragLeave={() => setOver((o) => (o === b.id ? null : o))}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  setOver((o) => (o === b.id ? null : o));
+                  setDropAt((d) => (d?.bucket === b.id ? null : d));
+                }}
                 onDrop={(e) => {
                   e.preventDefault();
-                  setOver(null);
-                  const t = board.tasks.find((x) => x.id === dragId);
-                  setDragId(null);
-                  if (!t || colOf(t) === b.id) return;
-                  patchLocal(t.id, { bucket_id: b.id, done: b.name.toLowerCase() === "done" ? true : t.done });
-                  run(applyTask(t.id, { op: "set", bucket: b.id }));
+                  if (dragCol) return void dropColumn(b.id);
+                  dropTask(b.id, dropAt?.bucket === b.id ? dropAt.index : undefined);
                 }}
-                className={`flex w-72 shrink-0 flex-col rounded-xl bg-surface-2/70 ${over === b.id ? "ring-2 ring-accent" : ""}`}
+                style={{ backgroundColor: tint(cc, 7), borderTop: `4px solid ${cc}` }}
+                className={`flex w-72 shrink-0 flex-col overflow-hidden rounded-xl ${over === b.id ? "ring-2 ring-accent" : ""} ${
+                  colOver === b.id && dragCol !== b.id ? "outline outline-4 -outline-offset-2 outline-accent/60" : ""
+                } ${dragCol === b.id ? "opacity-40" : ""}`}
               >
-                <div className="relative flex items-center gap-2 px-3 pb-1 pt-2.5">
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-semibold" title={b.name}>
+                <div
+                  className={`relative flex items-center gap-2 px-3 pb-2 pt-2.5 ${board.can_manage ? "cursor-grab active:cursor-grabbing" : ""}`}
+                  style={{ backgroundColor: tint(cc, 16) }}
+                  draggable={board.can_manage}
+                  title={board.can_manage ? "Drag to move the column" : undefined}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", b.name);
+                    setColMenu(null);
+                    setDragCol(b.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragCol(null);
+                    setColOver(null);
+                  }}
+                >
+                  {board.can_manage && <span aria-hidden className="text-xs" style={{ color: cc }}>⠿</span>}
+                  <h3 className="min-w-0 flex-1 truncate text-sm font-bold" title={b.name} style={{ color: cc }}>
                     {b.name}
                   </h3>
-                  <span className="rounded-full bg-surface px-1.5 text-xs text-muted">{open.length}</span>
+                  <span className="rounded-full px-2 text-xs font-semibold text-white" style={{ backgroundColor: cc }}>{open.length}</span>
                   {board.can_manage && (
                     <button
                       type="button"
@@ -277,7 +363,25 @@ export function ProjectBoard({
                   />
                 </form>
                 <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
-                  {open.map(card)}
+                  {open.map((t, i) => (
+                    <div
+                      key={t.id}
+                      onDragOver={(e) => {
+                        if (!dragId || dragCol) return;
+                        const r = e.currentTarget.getBoundingClientRect();
+                        const index = e.clientY < r.top + r.height / 2 ? i : i + 1;
+                        if (dropAt?.bucket !== b.id || dropAt.index !== index) setDropAt({ bucket: b.id, index });
+                      }}
+                    >
+                      {dropAt?.bucket === b.id && dropAt.index === i && dragId !== t.id && (
+                        <div className="mb-2 h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
+                      )}
+                      {card(t, cc)}
+                    </div>
+                  ))}
+                  {dropAt?.bucket === b.id && dropAt.index === open.length && open.length > 0 && (
+                    <div className="h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
+                  )}
                   {!open.length && <p className="rounded-lg border border-dashed border-line p-3 text-center text-xs text-muted">{dragId ? "Drop here" : "No tasks"}</p>}
                   {done.length > 0 && (
                     <>
@@ -288,7 +392,7 @@ export function ProjectBoard({
                       >
                         {showDone[b.id] ? "▾" : "▸"} Completed ({done.length})
                       </button>
-                      {showDone[b.id] && done.map(card)}
+                      {showDone[b.id] && done.map((t) => card(t, cc))}
                     </>
                   )}
                 </div>
@@ -298,6 +402,15 @@ export function ProjectBoard({
           {board.can_manage && (
             <button
               type="button"
+              onDragOver={(e) => {
+                if (!dragCol) return;
+                e.preventDefault();
+                setColOver("end");
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragCol) void dropColumn(null);
+              }}
               onClick={() => column("add", null)}
               className="h-fit w-56 shrink-0 rounded-xl border-2 border-dashed border-line px-3 py-3 text-left text-sm text-muted hover:border-accent hover:text-accent"
             >

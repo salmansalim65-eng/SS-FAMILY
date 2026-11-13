@@ -7,6 +7,9 @@ import { Avatar, projectPeople, useAppData } from "@/components/data";
 import { drag, TASK_SELECT, TaskCard } from "@/components/task-card";
 import { TaskDrawer } from "@/components/task-drawer";
 import { supabase } from "@/lib/supabase/client";
+
+// One colour per column, in order (repeats after the last) — the same as the dashboard's board.
+const COLUMN_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#e11d48"];
 import type { Bucket, Task } from "@/lib/types";
 
 function Board() {
@@ -293,7 +296,8 @@ function Board() {
         </p>
       )}
       <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
-        {buckets.map((b) => {
+        {buckets.map((b, bi) => {
+          const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
           const all = tasks.filter((t) => t.bucket_id === b.id);
           const list = all.filter((t) => !t.done).sort((x, y) => x.position - y.position);
           const done = all.filter((t) => t.done);
@@ -323,9 +327,11 @@ function Board() {
               className={`flex max-h-[calc(100dvh-9rem)] w-72 shrink-0 flex-col rounded-2xl bg-surface-2 ${over === b.id ? "ring-2 ring-accent" : ""} ${
                 colOver === b.id && dragCol !== b.id ? "border-l-4 border-accent" : ""
               } ${dragCol === b.id ? "opacity-40" : ""}`}
+              style={{ backgroundColor: `color-mix(in srgb, ${cc} 7%, transparent)`, borderTop: `4px solid ${cc}` }}
             >
               <div
-                className="flex cursor-grab items-center gap-2 px-3 pb-1 pt-2.5 active:cursor-grabbing"
+                className="flex cursor-grab items-center gap-2 rounded-t-xl px-3 pb-2 pt-2.5 active:cursor-grabbing"
+                style={{ backgroundColor: `color-mix(in srgb, ${cc} 16%, transparent)` }}
                 draggable
                 title="Drag to move the column"
                 onDragStart={(e) => {
@@ -338,16 +344,17 @@ function Board() {
                   setColOver(null);
                 }}
               >
-                <span aria-hidden className="text-xs text-muted">⠿</span>
+                <span aria-hidden className="text-xs" style={{ color: cc }}>⠿</span>
                 <button
                   type="button"
                   onDoubleClick={() => renameBucket(b)}
                   title="Double-click to rename"
-                  className="min-w-0 flex-1 truncate text-left text-sm font-semibold"
+                  className="min-w-0 flex-1 truncate text-left text-sm font-bold"
+                  style={{ color: cc }}
                 >
                   {b.name}
                 </button>
-                <span className="text-xs text-muted">{list.length}</span>
+                <span className="rounded-full px-2 text-xs font-semibold text-white" style={{ backgroundColor: cc }}>{list.length}</span>
                 <button
                   type="button"
                   onClick={() => deleteBucket(b)}
@@ -370,13 +377,13 @@ function Board() {
                     }}
                   >
                     {dropAt?.bucket === b.id && dropAt.index === i && drag.task?.id !== t.id && (
-                      <div className="mb-2 h-1 rounded-full bg-accent" aria-hidden />
+                      <div className="mb-2 h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
                     )}
                     <TaskCard task={t} onOpen={() => setOpen(t.id)} onToggle={() => toggle(t)} />
                   </div>
                 ))}
                 {dropAt?.bucket === b.id && dropAt.index === list.length && list.length > 0 && (
-                  <div className="h-1 rounded-full bg-accent" aria-hidden />
+                  <div className="h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
                 )}
                 {done.length > 0 && (
                   <>
