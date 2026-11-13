@@ -11,7 +11,7 @@ type Project = { id: string; name: string; workspace: string };
 
 const GRAY = "#94a3b8";
 // One colour per column, in order (repeats after the last).
-const COLUMN_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#06b6d4", "#e11d48"];
+const COLUMN_COLORS = ["#1f3a5f", "#2f6f62", "#7a3b3f", "#6b4e71", "#a67c2e", "#3f6e4a", "#4a6c8c", "#8c5a3c", "#4d5d8a", "#6e7f5c", "#5c6b73", "#9a6b4f"]; // muted, "English" tones: navy, teal, burgundy, plum, antique gold, racing green, slate, terracotta, indigo, sage, graphite, tan
 const tint = (hex: string, pct: number) => `color-mix(in srgb, ${hex} ${pct}%, transparent)`;
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 const PRI: Record<string, { label: string; chip: string }> = {
