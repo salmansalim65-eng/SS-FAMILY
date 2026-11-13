@@ -7,6 +7,9 @@ import { Avatar, projectPeople, useAppData } from "@/components/data";
 import { drag, TASK_SELECT, TaskCard } from "@/components/task-card";
 import { TaskDrawer } from "@/components/task-drawer";
 import { supabase } from "@/lib/supabase/client";
+
+// One colour per column, in order (repeats after the last) — the same as the dashboard's board.
+const COLUMN_COLORS = ["#1f3a5f", "#2f6f62", "#7a3b3f", "#6b4e71", "#a67c2e", "#3f6e4a", "#4a6c8c", "#8c5a3c", "#4d5d8a", "#6e7f5c", "#5c6b73", "#9a6b4f"]; // muted, "English" tones: navy, teal, burgundy, plum, antique gold, racing green, slate, terracotta, indigo, sage, graphite, tan
 import type { Bucket, Task } from "@/lib/types";
 
 function Board() {
@@ -23,6 +26,11 @@ function Board() {
   const [showSettings, setShowSettings] = useState(false);
   const [open, setOpen] = useState<string | null>(search.get("task"));
   const [over, setOver] = useState<string | null>(null);
+  // Where a dragged task would land: before the task at `index` in that column.
+  const [dropAt, setDropAt] = useState<{ bucket: string; index: number } | null>(null);
+  // A column being dragged to a new place, and the column it would go before.
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const [colOver, setColOver] = useState<string | null>(null);
   const [showDone, setShowDone] = useState<Record<string, boolean>>({}); // completed tasks open, per column
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +95,17 @@ function Board() {
       .then(({ data: rows }) => setTakeover((rows?.[0] as { user_id: string; created_at: string } | undefined) ?? null));
   }, [projectId]);
 
+  // A drag that ends anywhere (dropped outside, or Esc) clears the drop markers.
+  useEffect(() => {
+    const clear = () => {
+      setDropAt(null);
+      setOver(null);
+      setColOver(null);
+    };
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
+
   const doneBucket = buckets.find((b) => b.name.toLowerCase() === "done");
 
   async function patch(task: Task, change: Partial<Task>) {
@@ -103,15 +122,51 @@ function Board() {
     }
   }
 
-  function dropOn(bucket: Bucket) {
+  /** Open tasks of a column in board order. */
+  const openIn = (bucketId: string) =>
+    tasks.filter((t) => t.bucket_id === bucketId && !t.done).sort((a, b) => a.position - b.position);
+
+  /** Drops the dragged task into a column, before the open task at `index` (or at the end). */
+  function dropOn(bucket: Bucket, index?: number) {
     const t = drag.task;
     drag.task = null;
     setOver(null);
-    if (!t || t.bucket_id === bucket.id) return;
+    setDropAt(null);
+    if (!t) return;
+    const list = openIn(bucket.id).filter((x) => x.id !== t.id);
+    const at = Math.max(0, Math.min(index ?? list.length, list.length));
+    const prev = list[at - 1]?.position;
+    const next = list[at]?.position;
+    const position =
+      prev !== undefined && next !== undefined ? (prev + next) / 2 : prev !== undefined ? prev + 1 : next !== undefined ? next - 1 : 1;
+    if (t.bucket_id === bucket.id && t.position === position) return;
+    const change: Partial<Task> = { bucket_id: bucket.id, position };
     // Into "Done" completes the task; out of it reopens.
-    const change: Partial<Task> = { bucket_id: bucket.id };
-    if (doneBucket) change.done = bucket.id === doneBucket.id;
+    if (doneBucket && t.bucket_id !== bucket.id) change.done = bucket.id === doneBucket.id;
     patch(t, change);
+  }
+
+  /** Moves a dragged column before `target` (or to the end), renumbering the columns. */
+  async function moveColumn(target: string | null) {
+    const from = dragCol;
+    setDragCol(null);
+    setColOver(null);
+    if (!from || from === target) return;
+    const order = buckets.filter((b) => b.id !== from);
+    const at = target ? order.findIndex((b) => b.id === target) : order.length;
+    const moved = buckets.find((b) => b.id === from);
+    if (!moved) return;
+    order.splice(at < 0 ? order.length : at, 0, moved);
+    const renumbered = order.map((b, i) => ({ ...b, position: i + 1 }));
+    setBuckets(renumbered);
+    const sb = supabase();
+    const changed = renumbered.filter((b) => buckets.find((x) => x.id === b.id)?.position !== b.position);
+    const results = await Promise.all(changed.map((b) => sb.from("buckets").update({ position: b.position }).eq("id", b.id)));
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      setError(failed.error.message);
+      load();
+    }
   }
 
   function toggle(t: Task) {
@@ -241,38 +296,65 @@ function Board() {
         </p>
       )}
       <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
-        {buckets.map((b) => {
+        {buckets.map((b, bi) => {
+          const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
           const all = tasks.filter((t) => t.bucket_id === b.id);
-          const list = all.filter((t) => !t.done);
+          const list = all.filter((t) => !t.done).sort((x, y) => x.position - y.position);
           const done = all.filter((t) => t.done);
           return (
             <section
               key={b.id}
               onDragOver={(e) => {
+                if (dragCol) {
+                  e.preventDefault();
+                  setColOver(b.id);
+                  return;
+                }
                 if (!drag.task) return;
                 e.preventDefault();
                 setOver(b.id);
               }}
-              onDragLeave={(e) =>
-                !e.currentTarget.contains(e.relatedTarget as Node | null) &&
-                setOver(null)
-              }
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                setOver(null);
+                setDropAt((d) => (d?.bucket === b.id ? null : d));
+              }}
               onDrop={(e) => {
                 e.preventDefault();
-                dropOn(b);
+                if (dragCol) return moveColumn(b.id);
+                dropOn(b, dropAt?.bucket === b.id ? dropAt.index : undefined);
               }}
-              className={`flex max-h-[calc(100dvh-9rem)] w-72 shrink-0 flex-col rounded-2xl bg-surface-2 ${over === b.id ? "ring-2 ring-accent" : ""}`}
+              className={`flex max-h-[calc(100dvh-9rem)] w-72 shrink-0 flex-col rounded-2xl bg-surface-2 ${over === b.id ? "ring-2 ring-accent" : ""} ${
+                colOver === b.id && dragCol !== b.id ? "border-l-4 border-accent" : ""
+              } ${dragCol === b.id ? "opacity-40" : ""}`}
+              style={{ backgroundColor: `color-mix(in srgb, ${cc} 7%, transparent)`, borderTop: `4px solid ${cc}` }}
             >
-              <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
+              <div
+                className="flex cursor-grab items-center gap-2 rounded-t-xl px-3 pb-2 pt-2.5 active:cursor-grabbing"
+                style={{ backgroundColor: `color-mix(in srgb, ${cc} 16%, transparent)` }}
+                draggable
+                title="Drag to move the column"
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", b.name);
+                  setDragCol(b.id);
+                }}
+                onDragEnd={() => {
+                  setDragCol(null);
+                  setColOver(null);
+                }}
+              >
+                <span aria-hidden className="text-xs" style={{ color: cc }}>⠿</span>
                 <button
                   type="button"
                   onDoubleClick={() => renameBucket(b)}
                   title="Double-click to rename"
-                  className="min-w-0 flex-1 truncate text-left text-sm font-semibold"
+                  className="min-w-0 flex-1 truncate text-left text-sm font-bold"
+                  style={{ color: cc }}
                 >
                   {b.name}
                 </button>
-                <span className="text-xs text-muted">{list.length}</span>
+                <span className="rounded-full px-2 text-xs font-semibold text-white" style={{ backgroundColor: cc }}>{list.length}</span>
                 <button
                   type="button"
                   onClick={() => deleteBucket(b)}
@@ -284,14 +366,25 @@ function Board() {
               </div>
               <AddTask onAdd={(title) => addTask(b, title)} />
               <div className="min-h-10 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
-                {list.map((t) => (
-                  <TaskCard
+                {list.map((t, i) => (
+                  <div
                     key={t.id}
-                    task={t}
-                    onOpen={() => setOpen(t.id)}
-                    onToggle={() => toggle(t)}
-                  />
+                    onDragOver={(e) => {
+                      if (!drag.task || dragCol) return;
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const index = e.clientY < r.top + r.height / 2 ? i : i + 1;
+                      if (dropAt?.bucket !== b.id || dropAt.index !== index) setDropAt({ bucket: b.id, index });
+                    }}
+                  >
+                    {dropAt?.bucket === b.id && dropAt.index === i && drag.task?.id !== t.id && (
+                      <div className="mb-2 h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
+                    )}
+                    <TaskCard task={t} onOpen={() => setOpen(t.id)} onToggle={() => toggle(t)} />
+                  </div>
                 ))}
+                {dropAt?.bucket === b.id && dropAt.index === list.length && list.length > 0 && (
+                  <div className="h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
+                )}
                 {done.length > 0 && (
                   <>
                     <button
@@ -318,6 +411,15 @@ function Board() {
         })}
         <button
           type="button"
+          onDragOver={(e) => {
+            if (!dragCol) return;
+            e.preventDefault();
+            setColOver("end");
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (dragCol) moveColumn(null);
+          }}
           onClick={addBucket}
           className="w-56 shrink-0 rounded-2xl border-2 border-dashed border-line px-3 py-3 text-sm text-muted hover:text-fg"
         >

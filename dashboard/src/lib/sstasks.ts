@@ -268,3 +268,27 @@ export async function cancelSsInvite(token: string) {
     throw new Error(error.message);
   }
 }
+
+/** Puts a task into a column, before another task (or at the end of its open tasks). */
+export async function placeSsTask(task: string, bucket: string, before: string | null) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_task_place", { p_key: dashboardKey(), p_task: task, p_bucket: bucket, p_before: before })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) {
+    // Until migration 20261113090000 is applied to Task Hub.
+    if (/could not find the function|schema cache/i.test(error.message)) throw new Error("Dragging to a new place starts working after a Task Hub update — moving between columns with the task's menu still works.");
+    throw new Error(error.message);
+  }
+}
+
+/** Puts a column before another one (or last) — project owners only. */
+export async function moveSsBucket(project: string, bucket: string, before: string | null) {
+  const { error } = await projectClient("SSTASKS")
+    .rpc("dashboard_bucket_move", { p_key: dashboardKey(), p_project: project, p_bucket: bucket, p_before: before })
+    .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+  if (error) {
+    // Until migration 20261113090000 is applied to Task Hub.
+    if (/could not find the function|schema cache/i.test(error.message)) throw new Error("Dragging to a new place starts working after a Task Hub update — moving between columns with the task's menu still works.");
+    throw new Error(error.message);
+  }
+}
