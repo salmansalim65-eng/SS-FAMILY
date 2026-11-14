@@ -274,37 +274,35 @@ export function ProjectBoard({
 
   return createPortal(
     <div role="dialog" aria-label={`${board?.project.name ?? "Project"} board`} className="fixed inset-0 z-[70] flex flex-col bg-bg">
-      {/* the band: the project's colour, deepened towards midnight, with a soft sheen; white text and glass buttons */}
+      {/* the band: a light gold, with dark warm text; the project's colour stays in its dot */}
       <header
-        className="relative flex flex-wrap items-center gap-3 overflow-hidden px-5 py-3.5 text-white shadow-md"
-        style={{
-          background: `linear-gradient(120deg, color-mix(in srgb, ${color} 88%, #0b1220) 0%, color-mix(in srgb, ${color} 55%, #0b1220) 55%, color-mix(in srgb, ${color} 30%, #0b1220) 100%)`,
-        }}
+        className="relative flex flex-wrap items-center gap-3 overflow-hidden border-b border-[#e6cf8f] px-5 py-3.5 text-[#4a3610] shadow-sm"
+        style={{ background: "linear-gradient(120deg, #fdf6e3 0%, #f8e9bf 55%, #f1dba0 100%)" }}
       >
         <span
           aria-hidden
           className="pointer-events-none absolute inset-0"
-          style={{ background: "radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.22), transparent 55%)" }}
+          style={{ background: "radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.7), transparent 55%)" }}
         />
-        <span className="relative size-3.5 rounded-full bg-white/90 ring-4 ring-white/25" aria-hidden />
+        <span className="relative size-3.5 rounded-full ring-4 ring-white/70" style={{ background: color }} aria-hidden />
         <div className="relative min-w-0">
-          <h2 className="truncate text-lg font-semibold tracking-wide drop-shadow-sm">{board?.project.name ?? "Loading…"}</h2>
+          <h2 className="truncate text-lg font-semibold tracking-wide">{board?.project.name ?? "Loading…"}</h2>
           {board && (
-            <p className="flex flex-wrap items-center gap-1.5 text-xs text-white/80">
+            <p className="flex flex-wrap items-center gap-1.5 text-xs text-[#7a5c1e]">
               <span>{board.project.workspace}</span>
-              <span className="rounded-full bg-white/20 px-2 py-0.5 font-medium text-white">{board.tasks.filter((t) => !t.done).length} open</span>
-              <span className="rounded-full bg-white/10 px-2 py-0.5">{board.tasks.filter((t) => t.done).length} done</span>
+              <span className="rounded-full bg-[#b8892b] px-2 py-0.5 font-medium text-white">{board.tasks.filter((t) => !t.done).length} open</span>
+              <span className="rounded-full bg-white/70 px-2 py-0.5">{board.tasks.filter((t) => t.done).length} done</span>
             </p>
           )}
         </div>
         <div className="flex-1" />
-        <button type="button" onClick={onMembers} className="relative rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-sm backdrop-blur-sm transition hover:bg-white/20">
+        <button type="button" onClick={onMembers} className="relative rounded-full border border-[#d9bd73] bg-white/70 px-3 py-1.5 text-sm transition hover:bg-white">
           👥 Members
         </button>
-        <button type="button" onClick={() => load()} title="Refresh" className="relative rounded-full border border-white/30 bg-white/10 px-2.5 py-1.5 text-sm backdrop-blur-sm transition hover:bg-white/20">
+        <button type="button" onClick={() => load()} title="Refresh" className="relative rounded-full border border-[#d9bd73] bg-white/70 px-2.5 py-1.5 text-sm transition hover:bg-white">
           ↻
         </button>
-        <button type="button" onClick={onClose} className="relative rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-white/90">
+        <button type="button" onClick={onClose} className="relative rounded-full bg-[#9a7020] px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#87611a]">
           ✕ Close
         </button>
       </header>
