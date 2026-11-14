@@ -274,24 +274,37 @@ export function ProjectBoard({
 
   return createPortal(
     <div role="dialog" aria-label={`${board?.project.name ?? "Project"} board`} className="fixed inset-0 z-[70] flex flex-col bg-bg">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-3" style={{ borderTop: `4px solid ${color}` }}>
-        <span className="size-3.5 rounded" style={{ background: color }} aria-hidden />
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold">{board?.project.name ?? "Loading…"}</h2>
+      {/* the band: the project's colour, deepened towards midnight, with a soft sheen; white text and glass buttons */}
+      <header
+        className="relative flex flex-wrap items-center gap-3 overflow-hidden px-5 py-3.5 text-white shadow-md"
+        style={{
+          background: `linear-gradient(120deg, color-mix(in srgb, ${color} 88%, #0b1220) 0%, color-mix(in srgb, ${color} 55%, #0b1220) 55%, color-mix(in srgb, ${color} 30%, #0b1220) 100%)`,
+        }}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.22), transparent 55%)" }}
+        />
+        <span className="relative size-3.5 rounded-full bg-white/90 ring-4 ring-white/25" aria-hidden />
+        <div className="relative min-w-0">
+          <h2 className="truncate text-lg font-semibold tracking-wide drop-shadow-sm">{board?.project.name ?? "Loading…"}</h2>
           {board && (
-            <p className="text-xs text-muted">
-              {board.project.workspace} · {board.tasks.filter((t) => !t.done).length} open · {board.tasks.filter((t) => t.done).length} done
+            <p className="flex flex-wrap items-center gap-1.5 text-xs text-white/80">
+              <span>{board.project.workspace}</span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 font-medium text-white">{board.tasks.filter((t) => !t.done).length} open</span>
+              <span className="rounded-full bg-white/10 px-2 py-0.5">{board.tasks.filter((t) => t.done).length} done</span>
             </p>
           )}
         </div>
         <div className="flex-1" />
-        <button type="button" onClick={onMembers} className="rounded-full border border-line px-3 py-1.5 text-sm hover:bg-surface-2">
+        <button type="button" onClick={onMembers} className="relative rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-sm backdrop-blur-sm transition hover:bg-white/20">
           👥 Members
         </button>
-        <button type="button" onClick={() => load()} title="Refresh" className="rounded-full border border-line px-2.5 py-1.5 text-sm hover:bg-surface-2">
+        <button type="button" onClick={() => load()} title="Refresh" className="relative rounded-full border border-white/30 bg-white/10 px-2.5 py-1.5 text-sm backdrop-blur-sm transition hover:bg-white/20">
           ↻
         </button>
-        <button type="button" onClick={onClose} className="rounded-full border border-line bg-surface-2 px-3 py-1.5 text-sm font-medium hover:bg-surface">
+        <button type="button" onClick={onClose} className="relative rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-white/90">
           ✕ Close
         </button>
       </header>
