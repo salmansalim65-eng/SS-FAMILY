@@ -14,6 +14,14 @@ const GRAY = "#94a3b8";
 const COLUMN_COLORS = ["#1f3a5f", "#2f6f62", "#7a3b3f", "#6b4e71", "#a67c2e", "#3f6e4a", "#4a6c8c", "#8c5a3c", "#4d5d8a", "#6e7f5c", "#5c6b73", "#9a6b4f"]; // muted, "English" tones: navy, teal, burgundy, plum, antique gold, racing green, slate, terracotta, indigo, sage, graphite, tan
 const tint = (hex: string, pct: number) => `color-mix(in srgb, ${hex} ${pct}%, transparent)`;
 const dueFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+type View = "late" | "today" | "week" | "high" | "unassigned";
+const VIEWS: { key: View; label: string }[] = [
+  { key: "late", label: "⚠ Late" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "high", label: "Urgent & important" },
+  { key: "unassigned", label: "Not assigned" },
+];
 const PRI: Record<string, { label: string; chip: string }> = {
   urgent: { label: "Urgent", chip: "bg-red-600 text-white" },
   important: { label: "Important", chip: "bg-orange-500 text-white" },
@@ -60,6 +68,9 @@ export function ProjectBoard({
   const [colMenu, setColMenu] = useState<string | null>(null);
   // The new-bucket / bucket-settings window: null, a new one, or an existing bucket's id.
   const [bucketForm, setBucketForm] = useState<"new" | string | null>(null);
+  // the views above the board: tasks shown in every column (several may be on together)
+  const [views, setViews] = useState<Set<View>>(new Set());
+  const [person, setPerson] = useState("");
   const k = karachiToday();
   const today = `${k.y}-${String(k.m).padStart(2, "0")}-${String(k.d).padStart(2, "0")}`;
 
@@ -176,6 +187,25 @@ export function ProjectBoard({
   if (typeof document === "undefined") return null;
   const color = board?.project.color || GRAY;
   const buckets = board?.buckets ?? [];
+  // the views: Late / Today / This week by the due date (Karachi day), Urgent & important, Not assigned, one person
+  const weekEnd = (() => {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 6);
+    return d.toISOString().slice(0, 10);
+  })();
+  const filtering = views.size > 0 || person !== "";
+  const passes = (t: SsBoardTask) => {
+    if (!filtering) return true;
+    if (views.has("late") && !(t.due && t.due < today)) return false;
+    if (views.has("today") && t.due !== today) return false;
+    if (views.has("week") && !(t.due && t.due >= today && t.due <= weekEnd)) return false;
+    if (views.has("high") && t.priority !== "urgent" && t.priority !== "important") return false;
+    if (views.has("unassigned") && t.assignees.length > 0) return false;
+    if (person && !t.assignees.includes(person)) return false;
+    return true;
+  };
+  const people = [...new Set((board?.tasks ?? []).flatMap((t) => t.assignees))].sort((x, y) => x.localeCompare(y));
+  const shownOpen = (board?.tasks ?? []).filter((t) => !t.done && passes(t)).length;
   const firstId = buckets[0]?.id;
   const colOf = (t: SsBoardTask) => (t.bucket_id && buckets.some((b) => b.id === t.bucket_id) ? t.bucket_id : firstId);
 
@@ -266,6 +296,62 @@ export function ProjectBoard({
         </button>
       </header>
 
+      {board && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface px-4 py-2">
+          {VIEWS.map((v) => {
+            const on = views.has(v.key);
+            return (
+              <button
+                key={v.key}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setViews((s) => {
+                    const n = new Set(s);
+                    if (on) n.delete(v.key);
+                    else n.add(v.key);
+                    return n;
+                  })
+                }
+                className={`rounded-full border px-3 py-1 text-sm ${on ? "border-accent bg-accent text-white" : "border-line hover:bg-surface-2"}`}
+              >
+                {v.label}
+              </button>
+            );
+          })}
+          <select
+            aria-label="Assigned to"
+            value={person}
+            onChange={(e) => setPerson(e.target.value)}
+            className={`rounded-full border px-3 py-1 text-sm outline-none ${person ? "border-accent bg-accent text-white" : "border-line bg-surface"}`}
+          >
+            <option value="">Assigned to: anyone</option>
+            {people.map((n) => (
+              <option key={n} value={n}>
+                Assigned to: {n}
+              </option>
+            ))}
+          </select>
+          {filtering && (
+            <>
+              <span className="text-xs text-muted">
+                {shownOpen} of {board.tasks.filter((t) => !t.done).length} open tasks shown
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setViews(new Set());
+                  setPerson("");
+                }}
+                className="rounded-full px-2 py-1 text-xs text-muted hover:text-fg"
+              >
+                ✕ Clear
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {error && <p className="mx-4 mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
       {!board && !error && <p className="p-6 text-sm text-muted">Loading board…</p>}
 
@@ -273,7 +359,7 @@ export function ProjectBoard({
         <div className="flex flex-1 gap-3 overflow-x-auto p-4 [scrollbar-width:thin]">
           {buckets.map((b, bi) => {
             const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
-            const all = board.tasks.filter((t) => colOf(t) === b.id);
+            const all = board.tasks.filter((t) => colOf(t) === b.id && passes(t));
             const open = all.filter((t) => !t.done);
             const done = all.filter((t) => t.done);
             return (
@@ -297,7 +383,8 @@ export function ProjectBoard({
                 onDrop={(e) => {
                   e.preventDefault();
                   if (dragCol) return void dropColumn(b.id);
-                  dropTask(b.id, dropAt?.bucket === b.id ? dropAt.index : undefined);
+                  // with a view on, the place among the hidden tasks is not known: the task goes to the column's end
+                  dropTask(b.id, !filtering && dropAt?.bucket === b.id ? dropAt.index : undefined);
                 }}
                 style={{ backgroundColor: tint(cc, 7), borderTop: `4px solid ${cc}` }}
                 className={`flex w-72 shrink-0 flex-col overflow-hidden rounded-xl ${over === b.id ? "ring-2 ring-accent" : ""} ${
