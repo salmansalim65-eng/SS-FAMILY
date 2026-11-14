@@ -8,11 +8,12 @@ import type { SsTaskDetail, SsTaskOp } from "@/lib/sstasks";
 type Project = { id: string; name: string; workspace: string };
 type Person = { id: string; name: string };
 
+// one tap: the colour shows it (as on the board's chips)
 const PRIORITIES = [
-  { key: "urgent", label: "Urgent" },
-  { key: "important", label: "Important" },
-  { key: "medium", label: "Medium" },
-  { key: "low", label: "Low" },
+  { key: "urgent", label: "Urgent", on: "bg-red-600 text-white border-red-600" },
+  { key: "important", label: "Important", on: "bg-orange-500 text-white border-orange-500" },
+  { key: "medium", label: "Medium", on: "bg-sky-600 text-white border-sky-600" },
+  { key: "low", label: "Low", on: "bg-slate-500 text-white border-slate-500" },
 ];
 
 const field = "w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-accent";
@@ -179,16 +180,25 @@ export function TaskPanel({
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-2">
                 <span className={label}>Priority</span>
-                <select value={d.priority ?? ""} onChange={(e) => apply({ op: "set", priority: e.target.value }, (x) => ({ ...x, priority: e.target.value || null }))} className={field}>
-                  <option value="">None</option>
-                  {PRIORITIES.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Priority">
+                  {[{ key: "", label: "None", on: "bg-surface-2 text-fg border-fg/40" }, ...PRIORITIES].map((p) => {
+                    const active = (d.priority ?? "") === p.key;
+                    return (
+                      <button
+                        key={p.key || "none"}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => !active && apply({ op: "set", priority: p.key }, (x) => ({ ...x, priority: (p.key || null) as typeof x.priority }))}
+                        className={`rounded-full border px-3 py-1 text-sm font-medium transition ${active ? p.on : "border-line text-muted hover:bg-surface-2"}`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <span className={label}>Start</span>
