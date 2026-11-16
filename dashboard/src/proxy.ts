@@ -2,6 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/auth/", "/privacy"];
+// The Share-menu landing page: it reads nothing, it only parks the shared text
+// in the browser and opens the dashboard (which then asks to sign in if needed).
+const PUBLIC_EXACT = ["/share"];
 
 function isAllowed(email: string | undefined) {
   if (!email) return false;
@@ -38,7 +41,7 @@ export async function proxy(request: NextRequest) {
 
   const { data } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p)) || PUBLIC_EXACT.includes(path);
   const ok = !!data.user && isAllowed(data.user.email);
 
   if (!ok && !isPublic) {

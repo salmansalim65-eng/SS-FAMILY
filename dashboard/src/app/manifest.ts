@@ -9,6 +9,12 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#f5f6fa",
     theme_color: "#111827",
+    // Android: "Share" in WhatsApp (or any app) → SS Dashboard saves it under "Replies pending".
+    share_target: {
+      action: "/share",
+      method: "GET",
+      params: { title: "title", text: "text", url: "url" },
+    },
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
       { src: "/logos/ss-dashboard-512.png", sizes: "512x512", type: "image/png" },

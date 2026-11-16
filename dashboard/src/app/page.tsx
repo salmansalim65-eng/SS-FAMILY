@@ -4,6 +4,7 @@ import { CalendarEvents } from "@/components/calendar-events";
 import { FilesNotes } from "@/components/files-notes";
 import { Header } from "@/components/header";
 import { Notes } from "@/components/notes";
+import { Replies } from "@/components/replies";
 import { Reports, type CardMeta, type ProjectApp } from "@/components/reports";
 import { SsTasks } from "@/components/ss-tasks";
 import { getApps, getCards, getNotes, getSettings } from "@/lib/data";
@@ -58,8 +59,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
             <div className="min-w-0 md:order-last md:col-span-2 xl:order-none">
               <SsTasks appUrl={SSTASKS_URL} />
             </div>
-            <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-sm">
-              <Notes initial={notes} column />
+            {/* Messages still to answer (shared from WhatsApp), above the notes. */}
+            <div className="min-w-0 space-y-4">
+              <Replies />
+              <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+                <Notes initial={notes} column />
+              </div>
             </div>
           </div>
         )}
