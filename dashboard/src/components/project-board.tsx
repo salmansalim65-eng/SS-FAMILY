@@ -71,6 +71,7 @@ export function ProjectBoard({
   // the views above the board: tasks shown in every column (several may be on together)
   const [views, setViews] = useState<Set<View>>(new Set());
   const [person, setPerson] = useState("");
+  const [query, setQuery] = useState("");
   const k = karachiToday();
   const today = `${k.y}-${String(k.m).padStart(2, "0")}-${String(k.d).padStart(2, "0")}`;
 
@@ -193,7 +194,8 @@ export function ProjectBoard({
     d.setUTCDate(d.getUTCDate() + 6);
     return d.toISOString().slice(0, 10);
   })();
-  const filtering = views.size > 0 || person !== "";
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtering = views.size > 0 || person !== "" || words.length > 0;
   const passes = (t: SsBoardTask) => {
     if (!filtering) return true;
     if (views.has("late") && !(t.due && t.due < today)) return false;
@@ -202,6 +204,10 @@ export function ProjectBoard({
     if (views.has("high") && t.priority !== "urgent" && t.priority !== "important") return false;
     if (views.has("unassigned") && t.assignees.length > 0) return false;
     if (person && !t.assignees.includes(person)) return false;
+    if (words.length) {
+      const hay = `${t.title} ${t.assignees.join(" ")}`.toLowerCase();
+      if (!words.every((w) => hay.includes(w))) return false;
+    }
     return true;
   };
   const people = [...new Set((board?.tasks ?? []).flatMap((t) => t.assignees))].sort((x, y) => x.localeCompare(y));
@@ -299,6 +305,21 @@ export function ProjectBoard({
 
       {board && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface px-4 py-2">
+          <input
+            type="search"
+            aria-label="Search tasks"
+            placeholder="🔍 Search tasks"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query) {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                setQuery("");
+              }
+            }}
+            className={`w-48 rounded-full border bg-surface px-3 py-1 text-sm outline-none focus:border-accent ${query ? "border-accent" : "border-line"}`}
+          />
           {VIEWS.map((v) => {
             const on = views.has(v.key);
             return (
@@ -343,6 +364,7 @@ export function ProjectBoard({
                 onClick={() => {
                   setViews(new Set());
                   setPerson("");
+                  setQuery("");
                 }}
                 className="rounded-full px-2 py-1 text-xs text-muted hover:text-fg"
               >
