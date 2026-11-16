@@ -41,7 +41,7 @@ type Task = {
 };
 type Person = { id: string; name: string };
 type Project = { id: string; name: string; color: string | null; workspace: string; people?: Person[] };
-type Tab = "mine" | "by_me";
+type Tab = "all" | "mine" | "by_me";
 type View = "list" | "board" | "calendar";
 type GroupBy = "project" | "progress" | "due" | "priority" | "assignee";
 type Workspace = { id: string; name: string; color: string | null };
@@ -51,7 +51,7 @@ type State = { status: "loading" } | { status: "error"; message: string } | { st
 type Group = { key: string; label: string; sub?: string; color: string; tasks: Task[]; droppable: boolean };
 type Patch = { due?: string | null; time?: string | null; priority?: string | null; project?: string; bucket?: string };
 
-const DEFAULT_PREFS: Prefs = { tab: "mine", view: "list", groupBy: "project", folded: [], lastProject: null };
+const DEFAULT_PREFS: Prefs = { tab: "all", view: "list", groupBy: "project", folded: [], lastProject: null };
 const GRAY = "#94a3b8";
 
 const PRIORITIES: { key: Priority; label: string; color: string; chip: string }[] = [
@@ -105,7 +105,8 @@ function textOn(hex: string | null) {
 
 function readPrefs(): Prefs {
   try {
-    const p = { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
+    // The panel always opens on "All"; the other choices are remembered.
+    const p = { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}"), tab: "all" as Tab };
     return Array.isArray(p.folded) ? p : DEFAULT_PREFS;
   } catch {
     return DEFAULT_PREFS;
@@ -253,7 +254,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return (prefs.tab === "mine" ? mine : byMe).filter((t) => {
+    return (prefs.tab === "all" ? tasks : prefs.tab === "mine" ? mine : byMe).filter((t) => {
       if (needle && !`${t.title} ${t.project} ${t.workspace}`.toLowerCase().includes(needle)) return false;
       if (filters.has("late") && !(t.due && t.due < todayS)) return false;
       if (filters.has("today") && t.due !== todayS) return false;
@@ -312,7 +313,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     }
     // Empty projects too (a new team project, or one just made here), so tasks can be added to them —
     // but not the many emptied Personal lists, and not while searching or filtering.
-    if (prefs.tab === "mine" && !q.trim() && filters.size === 0) {
+    if (prefs.tab !== "by_me" && !q.trim() && filters.size === 0) {
       for (const p of projects) {
         if (map.has(p.id) || (p.workspace === "Personal" && !fresh.includes(p.id))) continue;
         map.set(p.id, { key: p.id, label: p.name, sub: p.workspace, color: p.color || GRAY, tasks: [], droppable: true });
@@ -463,7 +464,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       const a = await assignTask(res.id, g.key, true);
       if (!a.ok) setError(a.error);
     }
-    if (prefs.tab !== "mine") setPref({ tab: "mine" });
+    if (prefs.tab === "by_me") setPref({ tab: "all" });
     load(true);
     return null;
   }
@@ -807,7 +808,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           projects={projects}
           initialProject={prefs.lastProject}
           onAdded={(project) => {
-            setPref({ lastProject: project, tab: "mine" });
+            setPref({ lastProject: project, ...(prefs.tab === "by_me" ? { tab: "all" as Tab } : {}) });
             load(true);
           }}
         />
@@ -817,6 +818,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       <div role="tablist" className="mb-2 flex gap-1 rounded-xl bg-surface-2 p-1 text-sm">
         {(
           [
+            ["all", "All", tasks],
             ["mine", "To me", mine],
             ["by_me", "By me", byMe],
           ] as const
@@ -888,7 +890,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       {state.status === "error" && <p className="text-sm text-danger">{state.message}</p>}
       {state.status === "ready" && shown.length === 0 && prefs.view !== "calendar" && (
         <p className="py-4 text-center text-sm text-muted">
-          {filters.size || q ? "No tasks match." : prefs.tab === "mine" ? "Nothing on your plate 🎉" : "No open tasks given to others."}
+          {filters.size || q ? "No tasks match." : prefs.tab === "by_me" ? "No open tasks given to others." : "Nothing on your plate 🎉"}
         </p>
       )}
 
@@ -1108,7 +1110,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       const res = await addSsTask(fallback, title, day || null, null);
       if (!res.ok) return res.error;
       if (time) await editSsTask(res.id, { time });
-      if (prefs.tab !== "mine") setPref({ tab: "mine" });
+      if (prefs.tab === "by_me") setPref({ tab: "all" });
       load(true);
       return null;
     }
