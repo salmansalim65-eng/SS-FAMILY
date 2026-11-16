@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { actOnInboxItem, readInboxAlert } from "@/app/inbox/actions";
+import { updateReply } from "@/app/replies/actions";
 import type { InboxAlert, InboxAuthorization, InboxSection } from "@/lib/inbox";
-import { onDashboardRefresh } from "@/lib/refresh-event";
+import { onDashboardRefresh, requestDashboardRefresh } from "@/lib/refresh-event";
+import type { Reply } from "@/lib/replies";
 import { AppGlyph } from "./app-icon";
 
-// 🔔 in the top strip: SS's approvals and alerts from SSA, RMI and MBL.
+// 🔔 in the top strip: SS's approvals and alerts from SSA, RMI and MBL, and
+// the WhatsApp replies due today or late ("Replies pending").
 // SSA and RMI documents can be approved here; MBL opens MBL (its own sign-in
 // and MFA). New items also ring as browser notifications.
 
@@ -32,11 +35,19 @@ function ago(iso: string) {
 }
 
 /** Rings a browser notification for items not seen in this browser before (not on the very first load). */
-function notifyNew(sections: InboxSection[]) {
-  const keys = sections.flatMap((s) => [
-    ...s.authorizations.map((a) => ({ key: `${s.project}:a:${a.id}`, title: `Approval needed · ${s.name}`, body: a.label })),
-    ...s.alerts.map((a) => ({ key: `${s.project}:n:${a.id}`, title: `${s.name}: ${a.title}`, body: a.body ?? "" })),
-  ]);
+function notifyNew(sections: InboxSection[], replies: Reply[], today: string) {
+  const keys = [
+    ...sections.flatMap((s) => [
+      ...s.authorizations.map((a) => ({ key: `${s.project}:a:${a.id}`, title: `Approval needed · ${s.name}`, body: a.label })),
+      ...s.alerts.map((a) => ({ key: `${s.project}:n:${a.id}`, title: `${s.name}: ${a.title}`, body: a.body ?? "" })),
+    ]),
+    // Rings again when a reply turns late (the key carries its state).
+    ...replies.map((r) => ({
+      key: `reply:${r.id}:${r.due}:${r.due && r.due < today ? "late" : "due"}`,
+      title: `${r.due && r.due < today ? "Reply late" : "Reply today"}: ${r.sender || "WhatsApp message"}`,
+      body: r.message.slice(0, 140),
+    })),
+  ];
   let seen: string[] | null = null;
   try {
     const raw = localStorage.getItem(SEEN_KEY);
@@ -58,6 +69,8 @@ function notifyNew(sections: InboxSection[]) {
 
 export function InboxBell() {
   const [sections, setSections] = useState<InboxSection[] | null>(null);
+  const [replies, setReplies] = useState<Reply[]>([]);
+  const [today, setToday] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -68,8 +81,10 @@ export function InboxBell() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       setSections(body.sections);
+      setReplies(body.replies ?? []);
+      setToday(body.today ?? "");
       setFailed(null);
-      notifyNew(body.sections);
+      notifyNew(body.sections, body.replies ?? [], body.today ?? "");
     } catch (e) {
       setFailed(e instanceof Error ? e.message : "Could not load");
     }
@@ -88,14 +103,15 @@ export function InboxBell() {
 
   const approvals = sections?.reduce((n, s) => n + s.authorizations.length, 0) ?? 0;
   const alerts = sections?.reduce((n, s) => n + s.alerts.length, 0) ?? 0;
-  const count = approvals + alerts;
+  const lateReplies = replies.filter((r) => r.due && r.due < today).length;
+  const count = approvals + alerts + replies.length;
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={`Inbox: ${approvals} approvals, ${alerts} alerts`}
+        aria-label={`Inbox: ${approvals} approvals, ${alerts} alerts, ${replies.length} replies due`}
         title="Approvals and alerts from the projects"
         className="relative flex size-9 items-center justify-center rounded-full border border-line bg-surface text-base hover:bg-surface-2"
       >
@@ -103,7 +119,7 @@ export function InboxBell() {
         {count > 0 && (
           <span
             className={`absolute -right-1 -top-1 min-w-5 rounded-full px-1 text-center text-[10px] font-bold leading-5 text-white ring-2 ring-white/70 ${
-              approvals > 0 ? "bg-red-500" : "bg-slate-500"
+              approvals > 0 || lateReplies > 0 ? "bg-red-500" : "bg-slate-500"
             }`}
           >
             {count > 99 ? "99+" : count}
@@ -115,6 +131,9 @@ export function InboxBell() {
         createPortal(
           <InboxPanel
             sections={sections}
+            replies={replies}
+            today={today}
+            setReplies={setReplies}
             failed={failed}
             onClose={() => setOpen(false)}
             onReload={load}
@@ -128,19 +147,25 @@ export function InboxBell() {
 
 function InboxPanel({
   sections,
+  replies,
+  today,
+  setReplies,
   failed,
   onClose,
   onReload,
   setSections,
 }: {
   sections: InboxSection[] | null;
+  replies: Reply[];
+  today: string;
+  setReplies: React.Dispatch<React.SetStateAction<Reply[]>>;
   failed: string | null;
   onClose: () => void;
   onReload: () => Promise<void>;
   setSections: React.Dispatch<React.SetStateAction<InboxSection[] | null>>;
 }) {
   const approvals = sections?.reduce((n, s) => n + s.authorizations.length, 0) ?? 0;
-  const alerts = sections?.reduce((n, s) => n + s.alerts.length, 0) ?? 0;
+  const alerts = (sections?.reduce((n, s) => n + s.alerts.length, 0) ?? 0) + replies.length;
   const [tab, setTab] = useState<"approvals" | "alerts">(approvals === 0 && alerts > 0 ? "alerts" : "approvals");
   const [note, setNote] = useState<{ text: string; link?: string | null; tone: "ok" | "error" } | null>(null);
   const [pending, start] = useTransition();
@@ -195,6 +220,17 @@ function InboxPanel({
         setNote({ text: res.error, tone: "error" });
         onReload();
       }
+    });
+  }
+
+  function replied(r: Reply) {
+    setReplies((xs) => xs.filter((x) => x.id !== r.id));
+    start(async () => {
+      const res = await updateReply(r.id, { done: true });
+      if (!res.ok) {
+        setNote({ text: res.error, tone: "error" });
+        onReload();
+      } else requestDashboardRefresh();
     });
   }
 
@@ -259,7 +295,52 @@ function InboxPanel({
           {!sections ? (
             [0, 1, 2].map((i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-surface-2" />)
           ) : (
-            sections.map((s) => {
+            <>
+              {tab === "alerts" && replies.length > 0 && (
+                <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+                    <span aria-hidden>💬</span>
+                    <span className="flex-1 text-sm font-semibold">Replies pending</span>
+                    <a href="/#replies" onClick={onClose} className="text-xs text-muted hover:text-fg">
+                      See all
+                    </a>
+                  </div>
+                  <ul className="divide-y divide-line">
+                    {replies.map((r) => {
+                      const late = !!r.due && r.due < today;
+                      return (
+                        <li key={r.id} className="flex items-start gap-2 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm">
+                              <span className="font-medium">{r.sender || "WhatsApp message"}</span>{" "}
+                              <span
+                                className={`rounded-full px-1.5 text-[11px] ${late ? "bg-red-500 text-white" : "bg-amber-200 text-amber-900 dark:bg-amber-900/60 dark:text-amber-100"}`}
+                              >
+                                {late && r.due ? `Late · ${r.due.slice(8, 10)}/${r.due.slice(5, 7)}` : "Today"}
+                              </span>
+                            </p>
+                            {r.message && (
+                              <p className="line-clamp-2 text-xs text-muted" dir="auto">
+                                {r.message}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => replied(r)}
+                            disabled={pending}
+                            title="Mark replied"
+                            className="shrink-0 rounded-lg border border-line px-2 py-0.5 text-xs text-muted hover:bg-surface-2 hover:text-fg"
+                          >
+                            ✓ Replied
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+              {sections.map((s) => {
               const items = tab === "approvals" ? s.authorizations : s.alerts;
               return (
                 <section key={s.project} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
@@ -386,7 +467,8 @@ function InboxPanel({
                   )}
                 </section>
               );
-            })
+            })}
+            </>
           )}
         </div>
       </div>
