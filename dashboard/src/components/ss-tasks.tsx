@@ -2251,7 +2251,7 @@ function MembersPanel({
                     Add
                   </button>
                 </form>
-                <p className="text-[11px] text-muted">Members see their own tasks in this project; owners see all of them and manage the project.</p>
+                <p className="text-[11px] text-muted">Every member sees all the tasks in this project, assigned or not; owners manage the project.</p>
               </div>
             ) : (
               <p className="text-xs text-muted">Only the project&apos;s owners can change its members.</p>
