@@ -824,8 +824,8 @@ function ProjectPeople({
         </div>
         <p className="text-xs text-muted">
           Private: only the people here can open this project (like a Teams
-          channel). Project owners manage it and see every task; everyone else
-          sees only their own tasks.
+          channel). Everyone here sees every task in it, assigned or not;
+          project owners manage it.
         </p>
         {error && (
           <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
