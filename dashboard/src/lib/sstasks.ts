@@ -35,6 +35,24 @@ function dashboardKey() {
   return key;
 }
 
+/** A 5-minute link to one task file (the private bucket is signed by Task Hub's dashboard-file function). */
+export async function openSsAttachment(id: string): Promise<string> {
+  const url = process.env.SSTASKS_SUPABASE_URL;
+  const anon = process.env.SSTASKS_SUPABASE_ANON_KEY;
+  if (!url || !anon) throw new Error("Task Hub is not connected yet.");
+  const res = await fetch(`${url}/functions/v1/dashboard-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${anon}` },
+    body: JSON.stringify({ key: dashboardKey(), attachment: id }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    cache: "no-store",
+  });
+  const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (res.status === 404 && !body.error) throw new Error("Opening files here starts working after a Task Hub update.");
+  if (!res.ok || !body.url) throw new Error(body.error || `Could not open the file (HTTP ${res.status}).`);
+  return body.url;
+}
+
 export async function loadSsTasks(): Promise<SsTask[]> {
   const { data, error } = await projectClient("SSTASKS")
     .rpc("dashboard_tasks", { p_key: dashboardKey() })

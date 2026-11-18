@@ -1,6 +1,6 @@
 "use server";
 
-import { applySsTask, cancelSsInvite, createSsBucket, saveSsBucket, moveSsBucket, placeSsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
+import { openSsAttachment, applySsTask, cancelSsInvite, createSsBucket, saveSsBucket, moveSsBucket, placeSsTask, assignSsTask, assignSsTaskByEmail, createSsProject, createSsTask, deleteSsProject, deleteSsTask, editSsBucket, getSsProjectBoard, getSsProjectMembers, getSsTaskDetail, setSsProjectMember, shareSsProject, setSsTaskDone, updateSsTask, type AssignByEmailResult, type ShareResult, type SsBucketAction, type SsMemberAction, type SsProjectBoard, type SsProjectMembers, type SsTaskDetail, type SsTaskOp, type SsTaskPatch } from "@/lib/sstasks";
 import { requireOwner } from "@/lib/supabase/server";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -354,5 +354,15 @@ export async function saveBucket(project: string, bucket: string, name: string, 
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err instanceof Error && err.message) || "Something went wrong." };
+  }
+}
+
+export async function openAttachment(id: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  try {
+    await requireOwner();
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Unknown file.");
+    return { ok: true, url: await openSsAttachment(id) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not open the file." };
   }
 }
