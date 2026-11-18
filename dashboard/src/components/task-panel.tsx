@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { applyTask, taskDetail } from "@/app/sstasks/actions";
+import { applyTask, openAttachment, taskDetail } from "@/app/sstasks/actions";
 import type { SsTaskDetail, SsTaskOp } from "@/lib/sstasks";
 
 type Project = { id: string; name: string; workspace: string };
@@ -319,13 +319,31 @@ export function TaskPanel({
                   <ul className="space-y-1 text-sm">
                     {d.attachments.map((a) => (
                       <li key={a.id} className="truncate">
-                        📄 {a.name}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            // Open the tab now (a popup after an await is blocked), then point it at the file.
+                            const tab = window.open("about:blank", "_blank");
+                            const res = await openAttachment(a.id);
+                            if (res.ok) {
+                              if (tab) tab.location.href = res.url;
+                              else window.location.href = res.url;
+                            } else {
+                              tab?.close();
+                              alert(res.error);
+                            }
+                          }}
+                          className="max-w-full truncate text-left text-accent hover:underline"
+                          title={`Open ${a.name}`}
+                        >
+                          📄 {a.name}
+                        </button>
                       </li>
                     ))}
                   </ul>
                 )}
                 <a href={openHref} target="_blank" rel="noopener noreferrer" className="text-xs text-accent hover:underline">
-                  Open in Task Hub to view or add files ↗
+                  Open in Task Hub to add files ↗
                 </a>
               </section>
             )}
