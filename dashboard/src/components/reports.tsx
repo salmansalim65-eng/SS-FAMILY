@@ -20,6 +20,12 @@ export type CardMeta = {
 };
 
 /** The icon a project's cards are grouped under, matched by project key. */
+// Projects whose installed app opens "web+…:" links (their manifest's
+// protocol_handlers → /open). With "Open in apps" on, cards use these links so
+// Windows opens the app instead of a browser tab. Remembered per browser.
+const APP_PROTOCOL: Record<string, string> = { MBL: "web+mblerp", RMI: "web+rmierp" };
+const IN_APP_KEY = "dashboard.openInApps";
+
 export type ProjectApp = { name: string; icon: string | null; color: string; url: string };
 
 type ProjectState = { loading: boolean; error: string | null; results: Record<string, CardResult> };
@@ -56,6 +62,30 @@ export function Reports({
   const rank = (p: string) => (order.indexOf(p) + 1 || order.length + 1);
   const projects = [...new Set(cards.map((c) => c.project))].sort((a, b) => rank(a) - rank(b));
   const [state, setState] = useState<Record<string, ProjectState>>({});
+  const [inApp, setInApp] = useState(false);
+  useEffect(() => {
+    try {
+      setInApp(localStorage.getItem(IN_APP_KEY) === "1");
+    } catch {}
+  }, []);
+  const toggleInApp = () =>
+    setInApp((v) => {
+      try {
+        localStorage.setItem(IN_APP_KEY, v ? "0" : "1");
+      } catch {}
+      return !v;
+    });
+  /** The project's own link for a page when "Open in apps" is on, else the page itself. */
+  const appLink = (project: string, href: string | undefined) => {
+    const proto = APP_PROTOCOL[project];
+    if (!inApp || !proto || !href) return href;
+    try {
+      const u = new URL(href);
+      return `${proto}:${encodeURIComponent(u.pathname + u.search + u.hash)}`;
+    } catch {
+      return href;
+    }
+  };
   const projectsKey = projects.join(",");
   const busy = useRef(false);
 
@@ -98,6 +128,16 @@ export function Reports({
     <Section
       title="Projects"
       action={
+        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={toggleInApp}
+          aria-pressed={inApp}
+          title="Open MBL and RMI cards in their installed apps on this computer (the app asks once to allow it)"
+          className={`rounded-full border px-3 py-1.5 text-sm ${inApp ? "border-accent bg-accent text-white" : "border-line bg-surface hover:bg-surface-2"}`}
+        >
+          {inApp ? "✓ " : ""}Open in apps
+        </button>
         <button
           type="button"
           onClick={refresh}
@@ -107,6 +147,7 @@ export function Reports({
           <span aria-hidden className={anyLoading ? "animate-spin" : ""}>↻</span>
           {anyLoading ? "Refreshing" : "Refresh"}
         </button>
+        </div>
       }
     >
       {projects.length === 0 && <p className="text-sm text-muted">No report cards yet — add some in Settings.</p>}
@@ -131,7 +172,11 @@ export function Reports({
                 {ps?.loading && <span aria-hidden className="animate-spin text-xs text-muted">↻</span>}
                 {updatedAt(ps) && <span className="text-[11px] font-normal text-muted">Updated {updatedAt(ps)}</span>}
                 {app && (
-                  <a href={app.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs font-normal text-muted hover:text-fg">
+                  <a
+                    href={appLink(project, app.url)}
+                    target={APP_PROTOCOL[project] && inApp ? undefined : "_blank"}
+                    rel="noopener noreferrer"
+                    className="ml-auto text-xs font-normal text-muted hover:text-fg">
                     Open ↗
                   </a>
                 )}
@@ -143,7 +188,7 @@ export function Reports({
                   .map((card) => (
                     <KpiCard
                       key={card.id}
-                      href={cardHref(card.link, app?.url)}
+                      href={appLink(project, cardHref(card.link, app?.url))}
                       theme={theme}
                       card={card}
                       currency={currency}
@@ -295,7 +340,11 @@ function KpiCard({
       )}
       {href && (
         // Covers the whole card, so a click anywhere opens the report in the project's app.
-        <a href={href} target="_blank" rel="noopener noreferrer" className="absolute inset-0 rounded-xl" aria-label={`Open ${card.title} report`} />
+        <a
+          href={href}
+          target={href.startsWith("web+") ? undefined : "_blank"}
+          rel="noopener noreferrer"
+          className="absolute inset-0 rounded-xl" aria-label={`Open ${card.title} report`} />
       )}
     </article>
   );
