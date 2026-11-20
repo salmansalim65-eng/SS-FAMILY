@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { applyTask, openAttachment, taskDetail } from "@/app/sstasks/actions";
 import type { SsTaskDetail, SsTaskOp } from "@/lib/sstasks";
+import { AssignByEmail } from "./invite";
 
 type Project = { id: string; name: string; workspace: string };
 type Person = { id: string; name: string };
@@ -252,6 +253,25 @@ export function TaskPanel({
                   );
                 })}
                 {d.people.length === 0 && <span className="text-xs text-muted">Nobody else is in this project yet.</span>}
+              </div>
+              {/* Someone outside the project: by email. A Task Hub user joins the project and gets the task;
+                  anyone else gets a join link, and the task waits for them. */}
+              <div className="mt-2">
+                <p className="mb-1 text-[11px] text-muted">Someone outside this project:</p>
+                <AssignByEmail
+                  taskId={d.id}
+                  appUrl={(() => {
+                    try {
+                      return new URL(openHref).origin;
+                    } catch {
+                      return "";
+                    }
+                  })()}
+                  onAssigned={async () => {
+                    await reload();
+                    onChanged();
+                  }}
+                />
               </div>
             </div>
 
