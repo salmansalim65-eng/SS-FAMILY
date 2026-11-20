@@ -22,6 +22,21 @@ const VIEWS: { key: View; label: string }[] = [
   { key: "high", label: "Urgent & important" },
   { key: "unassigned", label: "Not assigned" },
 ];
+const MODE_KEY = "dashboard.boardMode";
+const monthFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "long", year: "numeric" });
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** "2026-11-01" + n days, as YYYY-MM-DD (dates as UTC midnights, no zone drift). */
+function addDaysIso(iso: string, n: number) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function addMonthsIso(first: string, n: number) {
+  const d = new Date(`${first}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n, 1);
+  return d.toISOString().slice(0, 10);
+}
+
 const PRI: Record<string, { label: string; chip: string }> = {
   urgent: { label: "Urgent", chip: "bg-red-600 text-white" },
   important: { label: "Important", chip: "bg-orange-500 text-white" },
@@ -72,6 +87,24 @@ export function ProjectBoard({
   const [views, setViews] = useState<Set<View>>(new Set());
   const [person, setPerson] = useState("");
   const [query, setQuery] = useState("");
+  // Board or Calendar (remembered in this browser); the calendar's month, as its first day.
+  const [mode, setMode] = useState<"board" | "calendar">("board");
+  const [month, setMonth] = useState(() => {
+    const t = karachiToday();
+    return `${t.y}-${String(t.m).padStart(2, "0")}-01`;
+  });
+  const [dayOver, setDayOver] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(MODE_KEY) === "calendar") setMode("calendar");
+    } catch {}
+  }, []);
+  const chooseMode = (m: "board" | "calendar") => {
+    setMode(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {}
+  };
   const k = karachiToday();
   const today = `${k.y}-${String(k.m).padStart(2, "0")}-${String(k.d).padStart(2, "0")}`;
 
@@ -278,6 +311,135 @@ export function ProjectBoard({
     );
   };
 
+  /** Calendar: open tasks on their due dates (drag to another day, or to "No date"); undated tasks on the side. */
+  function calendarView() {
+    if (!board) return null;
+    const colorOf = (t: SsBoardTask) => {
+      const i = buckets.findIndex((b) => b.id === colOf(t));
+      return t.done ? GRAY : COLUMN_COLORS[(i < 0 ? 0 : i) % COLUMN_COLORS.length];
+    };
+    const shown = board.tasks.filter((t) => passes(t));
+    const unscheduled = shown.filter((t) => !t.done && !t.due);
+    // Six weeks from the Monday on or before the 1st.
+    const firstDow = (new Date(`${month}T00:00:00Z`).getUTCDay() + 6) % 7;
+    const start = addDaysIso(month, -firstDow);
+    const days = Array.from({ length: 42 }, (_, i) => addDaysIso(start, i));
+    const byDay = new Map<string, SsBoardTask[]>();
+    for (const t of shown) if (t.due) byDay.set(t.due, [...(byDay.get(t.due) ?? []), t]);
+
+    const setDue = (id: string, due: string | null) => {
+      const t = board.tasks.find((x) => x.id === id);
+      if (!t || t.due === due) return;
+      patchLocal(id, { due });
+      run(editSsTask(id, { due }));
+    };
+    const dropOn = (due: string | null) => (e: React.DragEvent) => {
+      e.preventDefault();
+      const id = dragId ?? e.dataTransfer.getData("text/plain");
+      setDragId(null);
+      setDayOver(null);
+      if (id) setDue(id, due);
+    };
+    const addOn = async (day: string) => {
+      const title = prompt(`New task on ${dueFmt.format(new Date(`${day}T00:00:00Z`))}`)?.trim();
+      if (!title) return;
+      const res = await addSsTask(projectId, title, day, null);
+      if (!res.ok) return setError(res.error);
+      await changed();
+    };
+    const chip = (t: SsBoardTask) => (
+      <div
+        key={t.id}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", t.id);
+          setDragId(t.id);
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDayOver(null);
+        }}
+        onClick={() => setOpenTask(t.id)}
+        title={`${t.title}${t.assignees.length ? ` — ${t.assignees.join(", ")}` : ""}`}
+        style={{ borderLeft: `3px solid ${colorOf(t)}`, background: tint(colorOf(t), 10) }}
+        className={`cursor-pointer truncate rounded px-1.5 py-0.5 text-xs ${t.done ? "text-muted line-through" : ""} ${dragId === t.id ? "opacity-40" : ""}`}
+      >
+        {t.time ? `${t.time} ` : ""}
+        {t.title}
+      </div>
+    );
+
+    return (
+      <div className="flex min-h-0 flex-1 gap-3 p-4">
+        <aside
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDayOver("none");
+          }}
+          onDragLeave={() => setDayOver((d) => (d === "none" ? null : d))}
+          onDrop={dropOn(null)}
+          className={`flex w-56 shrink-0 flex-col rounded-xl border bg-surface-2 p-2 ${dayOver === "none" ? "border-accent" : "border-line"}`}
+        >
+          <p className="px-1 pb-1 text-sm font-semibold">
+            No date <span className="text-xs font-normal text-muted">({unscheduled.length})</span>
+          </p>
+          <p className="px-1 pb-2 text-[11px] text-muted">Drag a task onto a day to plan it; drag it back here to clear the date.</p>
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">{unscheduled.map(chip)}</div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="mb-2 flex items-center gap-2">
+            <button type="button" onClick={() => setMonth((m) => addMonthsIso(m, -1))} className="rounded-full border border-line px-2.5 py-0.5 hover:bg-surface-2" aria-label="Previous month">
+              ‹
+            </button>
+            <h3 className="min-w-40 text-center font-semibold">{monthFmt.format(new Date(`${month}T00:00:00Z`))}</h3>
+            <button type="button" onClick={() => setMonth((m) => addMonthsIso(m, 1))} className="rounded-full border border-line px-2.5 py-0.5 hover:bg-surface-2" aria-label="Next month">
+              ›
+            </button>
+            <button type="button" onClick={() => setMonth(`${today.slice(0, 7)}-01`)} className="rounded-full border border-line px-3 py-0.5 text-sm hover:bg-surface-2">
+              Today
+            </button>
+          </div>
+          <div className="grid grid-cols-7 gap-px text-center text-[11px] font-medium text-muted">
+            {WEEKDAYS.map((w) => (
+              <div key={w} className="pb-1">
+                {w}
+              </div>
+            ))}
+          </div>
+          <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-6 gap-1">
+            {days.map((day) => {
+              const list = byDay.get(day) ?? [];
+              const inMonth = day.slice(0, 7) === month.slice(0, 7);
+              const isToday = day === today;
+              return (
+                <div
+                  key={day}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDayOver(day);
+                  }}
+                  onDragLeave={() => setDayOver((d) => (d === day ? null : d))}
+                  onDrop={dropOn(day)}
+                  className={`group flex min-h-0 flex-col overflow-hidden rounded-lg border p-1 ${dayOver === day ? "border-accent bg-accent/10" : isToday ? "border-accent/60 bg-surface" : "border-line bg-surface"} ${inMonth ? "" : "opacity-50"}`}
+                >
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className={`text-xs ${isToday ? "rounded-full bg-accent px-1.5 font-semibold text-white" : day < today ? "text-muted" : ""}`}>{Number(day.slice(8))}</span>
+                    <button type="button" onClick={() => addOn(day)} className="text-xs text-muted opacity-0 hover:text-accent group-hover:opacity-100" title="Add a task on this day">
+                      ＋
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto [scrollbar-width:thin]">{list.map(chip)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return createPortal(
     <div role="dialog" aria-label={`${board?.project.name ?? "Project"} board`} className="fixed inset-0 z-[70] flex flex-col bg-bg">
       {/* the band: slim, one line; a soft, muted sand-gold (a deep warm brown in dark mode) */}
@@ -305,6 +467,24 @@ export function ProjectBoard({
 
       {board && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface px-4 py-2">
+          <div role="group" aria-label="View" className="mr-1 flex rounded-full border border-line p-0.5 text-sm">
+            {(
+              [
+                ["board", "▦ Board"],
+                ["calendar", "📅 Calendar"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                onClick={() => chooseMode(m)}
+                className={`rounded-full px-3 py-0.5 ${mode === m ? "bg-accent text-white" : "text-muted hover:text-fg"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <input
             type="search"
             aria-label="Search tasks"
@@ -378,7 +558,9 @@ export function ProjectBoard({
       {error && <p className="mx-4 mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
       {!board && !error && <p className="p-6 text-sm text-muted">Loading board…</p>}
 
-      {board && (
+      {board && mode === "calendar" && calendarView()}
+
+      {board && mode === "board" && (
         <div className="flex flex-1 gap-3 overflow-x-auto p-4 [scrollbar-width:thin]">
           {buckets.map((b, bi) => {
             const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
