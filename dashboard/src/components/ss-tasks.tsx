@@ -47,12 +47,12 @@ type View = "list" | "board" | "calendar";
 type GroupBy = "project" | "progress" | "due" | "priority" | "assignee";
 type Workspace = { id: string; name: string; color: string | null };
 type Filter = "late" | "today" | "week" | "high";
-type Prefs = { tab: Tab; view: View; groupBy: GroupBy; folded: string[]; lastProject: string | null };
+type Prefs = { tab: Tab; view: View; groupBy: GroupBy; byMeGroupBy: GroupBy; folded: string[]; lastProject: string | null };
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; tasks: Task[]; projects: Project[]; workspaces: Workspace[] };
 type Group = { key: string; label: string; sub?: string; color: string; tasks: Task[]; droppable: boolean };
 type Patch = { due?: string | null; time?: string | null; priority?: string | null; project?: string; bucket?: string };
 
-const DEFAULT_PREFS: Prefs = { tab: "all", view: "list", groupBy: "project", folded: [], lastProject: null };
+const DEFAULT_PREFS: Prefs = { tab: "all", view: "list", groupBy: "project", byMeGroupBy: "assignee", folded: [], lastProject: null };
 const GRAY = "#94a3b8";
 
 const PRIORITIES: { key: Priority; label: string; color: string; chip: string }[] = [
@@ -127,6 +127,8 @@ const byDue = (a: Task, b: Task) => (a.due ?? "9999").localeCompare(b.due ?? "99
 export function SsTasks({ appUrl }: { appUrl: string }) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  // "By me" has its own grouping, by person (who has how many of the tasks SS gave out) unless changed.
+  const groupBy: GroupBy = prefs.tab === "by_me" ? prefs.byMeGroupBy : prefs.groupBy;
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -267,7 +269,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   }, [tasks, prefs.tab, q, filters, todayS, weekS]);
 
   const groups: Group[] = useMemo(() => {
-    if (prefs.groupBy === "due") {
+    if (groupBy === "due") {
       return DUE_GROUPS.map((g) => ({
         key: g.key,
         label: g.label,
@@ -276,14 +278,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         tasks: shown.filter((t) => dueGroup(t.due, todayS, weekS) === g.key).sort(byDue),
       })).filter((g) => g.tasks.length || g.droppable);
     }
-    if (prefs.groupBy === "priority") {
+    if (groupBy === "priority") {
       return [...PRIORITIES.map((p) => ({ key: p.key, label: p.label, color: p.color })), { key: "none", label: "No priority", color: GRAY }].map((g) => ({
         ...g,
         droppable: true,
         tasks: shown.filter((t) => (t.priority ?? "none") === g.key).sort(byDue),
       }));
     }
-    if (prefs.groupBy === "assignee") {
+    if (groupBy === "assignee") {
       const map = new Map<string, Group>();
       const none: Group = { key: "none", label: "Unassigned", color: GRAY, tasks: [], droppable: false };
       const palette = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6"];
@@ -298,7 +300,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       }
       return [...[...map.values()].sort((a, b) => a.label.localeCompare(b.label)), ...(none.tasks.length ? [none] : [])].map((g) => ({ ...g, tasks: g.tasks.sort(byDue) }));
     }
-    if (prefs.groupBy === "progress") {
+    if (groupBy === "progress") {
       const names = [...new Set([...PROGRESS.map((p) => p.key), ...shown.map((t) => (t.bucket ?? "To do").toLowerCase())])];
       return names.map((n) => {
         const known = PROGRESS.find((p) => p.key === n);
@@ -328,10 +330,10 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
           Number(lateCount(b.tasks) > 0) - Number(lateCount(a.tasks) > 0) || (a.sub ?? "").localeCompare(b.sub ?? "") || a.label.localeCompare(b.label),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, prefs.groupBy, prefs.tab, q, filters, projects, fresh, todayS, weekS, peopleById]);
+  }, [shown, groupBy, prefs.tab, q, filters, projects, fresh, todayS, weekS, peopleById]);
 
   // List and board fold separately, so collapsing the list never shrinks the board.
-  const foldKey = (g: string) => `${prefs.view}:${prefs.groupBy}:${g}`;
+  const foldKey = (g: string) => `${prefs.view}:${groupBy}:${g}`;
   const isFolded = (g: string) => prefs.folded.includes(foldKey(g));
   const toggleFold = (g: string) => setPref({ folded: isFolded(g) ? prefs.folded.filter((k) => k !== foldKey(g)) : [...prefs.folded, foldKey(g)] });
   const allFolded = groups.length > 0 && groups.every((g) => isFolded(g.key));
@@ -388,7 +390,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
 
   /** 👥 n on a project's header: who is in it; owners add / remove people there. */
   const membersBtn = (g: Group) => {
-    if (prefs.groupBy !== "project") return null;
+    if (groupBy !== "project") return null;
     const n = projects.find((p) => p.id === g.key)?.people?.length ?? 0;
     return (
       <button
@@ -407,7 +409,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   };
 
   const delProjectBtn = (g: Group) =>
-    prefs.groupBy === "project" ? (
+    groupBy === "project" ? (
       <button
         type="button"
         onClick={(e) => {
@@ -454,14 +456,14 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   /** "+ Add task" inside a group: the new task takes that group's project, column, due date or priority. */
   async function quickAdd(g: Group, title: string): Promise<string | null> {
     const fallback = projects.some((p) => p.id === prefs.lastProject) ? prefs.lastProject! : projects[0]?.id;
-    const project = prefs.groupBy === "project" ? g.key : fallback;
+    const project = groupBy === "project" ? g.key : fallback;
     if (!project) return "No project to add to.";
-    const due = prefs.groupBy === "due" ? (g.key === "today" ? todayS : g.key === "week" ? tomorrowS : g.key === "later" ? laterS : null) : null;
-    const priority = prefs.groupBy === "priority" && g.key !== "none" ? g.key : null;
+    const due = groupBy === "due" ? (g.key === "today" ? todayS : g.key === "week" ? tomorrowS : g.key === "later" ? laterS : null) : null;
+    const priority = groupBy === "priority" && g.key !== "none" ? g.key : null;
     const res = await addSsTask(project, title, due, priority);
     if (!res.ok) return res.error;
-    if (prefs.groupBy === "progress" && g.key !== "to do") await editSsTask(res.id, { bucket: g.label });
-    if (prefs.groupBy === "assignee" && g.key !== "none") {
+    if (groupBy === "progress" && g.key !== "to do") await editSsTask(res.id, { bucket: g.label });
+    if (groupBy === "assignee" && g.key !== "none") {
       const a = await assignTask(res.id, g.key, true);
       if (!a.ok) setError(a.error);
     }
@@ -500,9 +502,9 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
   /** What dropping a task on a group changes, for the current grouping. */
   function dropPatch(g: Group): Patch | null {
     if (!g.droppable) return null;
-    if (prefs.groupBy === "project") return { project: g.key };
-    if (prefs.groupBy === "priority") return { priority: g.key === "none" ? null : g.key };
-    if (prefs.groupBy === "progress") return { bucket: g.label };
+    if (groupBy === "project") return { project: g.key };
+    if (groupBy === "priority") return { priority: g.key === "none" ? null : g.key };
+    if (groupBy === "progress") return { bucket: g.label };
     return { due: g.key === "today" ? todayS : g.key === "week" ? tomorrowS : g.key === "later" ? laterS : null };
   }
   const dropProps = (g: Group) => ({
@@ -517,7 +519,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
       setOver(null);
       const t = tasks.find((x) => x.id === dragId);
       setDragId(null);
-      if (t && prefs.groupBy === "assignee") {
+      if (t && groupBy === "assignee") {
         if (g.key !== "none" && !(t.assignee_ids ?? []).includes(g.key)) assign(t, { id: g.key, name: g.label }, true);
         return;
       }
@@ -562,15 +564,15 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
     const p = PRIORITIES.find((x) => x.key === t.priority);
     return (
       <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted">
-        {prefs.groupBy !== "project" && (
+        {groupBy !== "project" && (
           <span className="inline-flex max-w-[10rem] items-center gap-1 truncate rounded-full px-2 py-0.5" style={{ backgroundColor: tint(t.color || GRAY, 18) }} title={`${t.workspace} · ${t.project}`}>
             <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: t.color || GRAY }} />
             <span className="truncate">{t.project}</span>
           </span>
         )}
         {dueChip(t.due)}
-        {p && p.key !== "medium" && prefs.groupBy !== "priority" && <span className={`rounded-full px-1.5 py-0.5 ${p.chip}`}>{p.label}</span>}
-        {prefs.groupBy !== "progress" && (t.bucket ?? "").toLowerCase() === "in progress" && (
+        {p && p.key !== "medium" && groupBy !== "priority" && <span className={`rounded-full px-1.5 py-0.5 ${p.chip}`}>{p.label}</span>}
+        {groupBy !== "progress" && (t.bucket ?? "").toLowerCase() === "in progress" && (
           <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-amber-700 dark:bg-amber-950 dark:text-amber-200">◐ In progress</span>
         )}
         {t.checks > 0 && (
@@ -703,7 +705,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
         </div>
         <label className="flex items-center gap-1 text-xs text-muted" title="Group by">
           <span className="hidden 2xl:inline">Group</span>
-          <select value={prefs.groupBy} onChange={(e) => setPref({ groupBy: e.target.value as GroupBy })} className="rounded-lg border border-line bg-surface px-1.5 py-1 text-xs text-fg">
+          <select value={groupBy} onChange={(e) => setPref(prefs.tab === "by_me" ? { byMeGroupBy: e.target.value as GroupBy } : { groupBy: e.target.value as GroupBy })} className="rounded-lg border border-line bg-surface px-1.5 py-1 text-xs text-fg">
             <option value="project">Project</option>
             <option value="progress">Progress</option>
             <option value="due">Due date</option>
@@ -918,7 +920,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                     <span className="rounded-full bg-surface/80 px-1.5 text-muted">{g.tasks.length}</span>
                   </span>
                 </button>
-                {prefs.groupBy === "project" && (
+                {groupBy === "project" && (
                   <button
                     type="button"
                     onClick={() => setBoardOf(g.key)}
@@ -974,7 +976,7 @@ export function SsTasks({ appUrl }: { appUrl: string }) {
                   <button type="button" onClick={() => toggleFold(g.key)} title="Collapse" className="text-xs text-muted hover:text-fg">
                     ◂
                   </button>
-                  {prefs.groupBy === "project" ? (
+                  {groupBy === "project" ? (
                     <button
                       type="button"
                       onClick={() => setBoardOf(g.key)}
