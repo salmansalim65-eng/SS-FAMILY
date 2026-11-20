@@ -257,7 +257,7 @@ export function TaskPanel({
               {/* Someone outside the project: by email. A Task Hub user joins the project and gets the task;
                   anyone else gets a join link, and the task waits for them. */}
               <div className="mt-2">
-                <p className="mb-1 text-[11px] text-muted">Someone outside this project:</p>
+                <p className="mb-1 text-[11px] text-muted">Someone outside this project (joins as a guest and sees only their own tasks):</p>
                 <AssignByEmail
                   taskId={d.id}
                   appUrl={(() => {
