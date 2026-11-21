@@ -6,11 +6,18 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, projectPeople, useAppData } from "@/components/data";
 import { drag, TASK_SELECT, TaskCard } from "@/components/task-card";
 import { TaskDrawer } from "@/components/task-drawer";
-import { dmy, todayKey } from "@/lib/dates";
+import { addDaysKey, dmy, todayKey } from "@/lib/dates";
 import { supabase } from "@/lib/supabase/client";
 
 // One colour per column, in order (repeats after the last) — the same as the dashboard's board.
 const COLUMN_COLORS = ["#1f3a5f", "#2f6f62", "#7a3b3f", "#6b4e71", "#a67c2e", "#3f6e4a", "#4a6c8c", "#8c5a3c", "#4d5d8a", "#6e7f5c", "#5c6b73", "#9a6b4f"]; // muted, "English" tones: navy, teal, burgundy, plum, antique gold, racing green, slate, terracotta, indigo, sage, graphite, tan
+const FILTERS = [
+  { key: "late", label: "⚠ Late" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "high", label: "Urgent & important" },
+  { key: "unassigned", label: "Not assigned" },
+];
 import type { Bucket, Task } from "@/lib/types";
 
 function Board() {
@@ -33,6 +40,10 @@ function Board() {
   const [dragCol, setDragCol] = useState<string | null>(null);
   const [colOver, setColOver] = useState<string | null>(null);
   const [showDone, setShowDone] = useState<Record<string, boolean>>({}); // completed tasks open, per column
+  // The SS Dashboard's views: search, Late / Today / This week / Urgent & important / Not assigned, one person.
+  const [query, setQuery] = useState("");
+  const [views, setViews] = useState<Set<string>>(new Set());
+  const [person, setPerson] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -243,6 +254,29 @@ function Board() {
   }
 
   if (!project) return <p className="text-sm text-muted">Loading project…</p>;
+  const today = todayKey();
+  const weekEnd = addDaysKey(today, 6);
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const filtering = views.size > 0 || person !== "" || words.length > 0;
+  const passes = (t: Task) => {
+    if (!filtering) return true;
+    const ids = (t.task_assignees ?? []).map((a) => a.user_id);
+    if (views.has("late") && !(t.due_date && t.due_date < today)) return false;
+    if (views.has("today") && t.due_date !== today) return false;
+    if (views.has("week") && !(t.due_date && t.due_date >= today && t.due_date <= weekEnd)) return false;
+    if (views.has("high") && t.priority !== "urgent" && t.priority !== "important") return false;
+    if (views.has("unassigned") && ids.length > 0) return false;
+    if (person && !ids.includes(person)) return false;
+    if (words.length) {
+      const names = ids.map((id) => data.people.get(id)?.full_name ?? "").join(" ");
+      const hay = `${t.title} ${names}`.toLowerCase();
+      if (!words.every((w) => hay.includes(w))) return false;
+    }
+    return true;
+  };
+  const openCount = tasks.filter((t) => !t.done).length;
+  const shownOpen = tasks.filter((t) => !t.done && passes(t)).length;
+
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -285,6 +319,68 @@ function Board() {
           </button>
         )}
       </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input
+          type="search"
+          aria-label="Search tasks"
+          placeholder="🔍 Search tasks"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className={`w-48 rounded-full border bg-surface px-3 py-1 text-sm outline-none focus:border-accent ${query ? "border-accent" : "border-line"}`}
+        />
+        {FILTERS.map((v) => {
+          const on = views.has(v.key);
+          return (
+            <button
+              key={v.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                setViews((cur) => {
+                  const n = new Set(cur);
+                  if (on) n.delete(v.key);
+                  else n.add(v.key);
+                  return n;
+                })
+              }
+              className={`rounded-full border px-3 py-1 text-sm ${on ? "border-accent bg-accent text-white" : "border-line bg-surface hover:bg-surface-2"}`}
+            >
+              {v.label}
+            </button>
+          );
+        })}
+        <select
+          aria-label="Assigned to"
+          value={person}
+          onChange={(e) => setPerson(e.target.value)}
+          className={`rounded-full border px-3 py-1 text-sm outline-none ${person ? "border-accent bg-accent text-white" : "border-line bg-surface"}`}
+        >
+          <option value="">Assigned to: anyone</option>
+          {assignable.map((p) => (
+            <option key={p.id} value={p.id}>
+              Assigned to: {p.full_name || p.email}
+            </option>
+          ))}
+        </select>
+        {filtering && (
+          <>
+            <span className="text-xs text-muted">
+              {shownOpen} of {openCount} open tasks shown
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setViews(new Set());
+                setPerson("");
+                setQuery("");
+              }}
+              className="rounded-full px-2 py-1 text-xs text-muted hover:text-fg"
+            >
+              ✕ Clear
+            </button>
+          </>
+        )}
+      </div>
       {error && (
         <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
@@ -299,7 +395,7 @@ function Board() {
       <div className="flex flex-1 items-start gap-3 overflow-x-auto pb-4">
         {buckets.map((b, bi) => {
           const cc = COLUMN_COLORS[bi % COLUMN_COLORS.length];
-          const all = tasks.filter((t) => t.bucket_id === b.id);
+          const all = tasks.filter((t) => t.bucket_id === b.id && passes(t));
           const list = all.filter((t) => !t.done).sort((x, y) => x.position - y.position);
           const done = all.filter((t) => t.done);
           return (
@@ -387,7 +483,7 @@ function Board() {
                     {dropAt?.bucket === b.id && dropAt.index === i && drag.task?.id !== t.id && (
                       <div className="mb-2 h-1 rounded-full" style={{ backgroundColor: cc }} aria-hidden />
                     )}
-                    <TaskCard task={t} onOpen={() => setOpen(t.id)} onToggle={() => toggle(t)} />
+                    <TaskCard task={t} color={cc} onOpen={() => setOpen(t.id)} onToggle={() => toggle(t)} />
                   </div>
                 ))}
                 {dropAt?.bucket === b.id && dropAt.index === list.length && list.length > 0 && (
@@ -407,6 +503,7 @@ function Board() {
                         <TaskCard
                           key={t.id}
                           task={t}
+                          color={cc}
                           onOpen={() => setOpen(t.id)}
                           onToggle={() => toggle(t)}
                         />
@@ -997,37 +1094,28 @@ function ProjectPeople({
 
 function AddTask({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
   const [text, setText] = useState("");
-  const [editing, setEditing] = useState(false);
-  if (!editing)
-    return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="mx-2 mb-2 rounded-lg px-2 py-1.5 text-left text-sm text-accent hover:bg-surface"
-      >
-        ＋ Add a task
-      </button>
-    );
+  const [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    await onAdd(text.trim());
+    setText("");
+    setBusy(false);
+  }
   return (
-    <form
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!text.trim()) return;
-        await onAdd(text.trim());
-        setText("");
-      }}
-      className="mx-2 mb-2"
-    >
+    <form onSubmit={submit} className="mx-2 mb-2 flex gap-1.5">
       <input
-        autoFocus
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => !text.trim() && setEditing(false)}
-        onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
-        placeholder="Task name, then Enter"
+        onKeyDown={(e) => e.key === "Escape" && setText("")}
+        placeholder="＋ Add task — type and press Enter"
         dir="auto"
-        className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-sm outline-none focus:border-accent"
+        className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-accent"
       />
+      <button type="submit" disabled={busy || !text.trim()} className="rounded-lg bg-accent px-3 text-sm font-medium text-white disabled:opacity-50">
+        Add
+      </button>
     </form>
   );
 }
