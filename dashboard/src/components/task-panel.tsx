@@ -457,12 +457,29 @@ export function TaskPanel({
                   setComment("");
                   apply({ op: "comment", body });
                 }}
-                className="flex gap-2"
+                className="space-y-1.5"
               >
-                <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment…" maxLength={4000} dir="auto" className={field} />
-                <button disabled={!comment.trim()} className="rounded-lg bg-accent px-3 text-sm font-medium text-white disabled:opacity-50">
-                  Send
-                </button>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter is a new line; Ctrl/⌘ + Enter sends.
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder="Write a comment… (Ctrl + Enter to send)"
+                  maxLength={4000}
+                  rows={3}
+                  dir="auto"
+                  className={`${field} resize-y`}
+                />
+                <div className="flex justify-end">
+                  <button disabled={!comment.trim()} className="rounded-lg bg-accent px-4 py-1 text-sm font-medium text-white disabled:opacity-50">
+                    Send
+                  </button>
+                </div>
               </form>
             </section>
 
