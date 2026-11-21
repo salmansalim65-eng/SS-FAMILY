@@ -19,6 +19,8 @@ const PRIORITIES = [
 
 const field = "w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm outline-none focus:border-accent";
 const label = "mb-1 block text-xs text-muted";
+// A task's final decision is a comment with this prefix (the same in the ERPs and Task Hub).
+const DECISION_PREFIX = "✅ Final decision: ";
 
 const when = (iso: string) => {
   const d = new Date(iso);
@@ -56,6 +58,8 @@ export function TaskPanel({
   const [error, setError] = useState<string | null>(null);
   const [check, setCheck] = useState("");
   const [comment, setComment] = useState("");
+  const [decision, setDecision] = useState("");
+  const [changingDecision, setChangingDecision] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
@@ -368,11 +372,74 @@ export function TaskPanel({
               </section>
             )}
 
+            {(() => {
+              // The final decision, as in the ERPs and Task Hub: a comment starting with DECISION_PREFIX; saving one closes the task.
+              const current = [...d.comments].filter((c) => c.body.startsWith(DECISION_PREFIX)).sort((a, b) => a.created_at.localeCompare(b.created_at)).pop();
+              const open = !current || changingDecision;
+              return (
+                <section className="space-y-2 rounded-xl border border-line p-3">
+                  <p className="text-sm font-medium">⚖ Final decision</p>
+                  {current && (
+                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/40">
+                      <p className="whitespace-pre-wrap text-sm font-medium" dir="auto">
+                        {current.body.slice(DECISION_PREFIX.length).trim()}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {current.mine ? "Me" : current.name} · {when(current.created_at)}
+                      </p>
+                    </div>
+                  )}
+                  {open ? (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const text = decision.trim();
+                        if (!text) return;
+                        setDecision("");
+                        setChangingDecision(false);
+                        await apply({ op: "comment", body: DECISION_PREFIX + text });
+                        if (!d.done) await apply({ op: "set", done: true });
+                      }}
+                      className="space-y-1.5"
+                    >
+                      <textarea
+                        aria-label="Final decision"
+                        value={decision}
+                        onChange={(e) => setDecision(e.target.value)}
+                        placeholder="Write the final decision taken on this task…"
+                        maxLength={3900}
+                        rows={3}
+                        dir="auto"
+                        className={field}
+                      />
+                      <div className="flex justify-end gap-2">
+                        {current && (
+                          <button type="button" onClick={() => setChangingDecision(false)} className="rounded-lg px-3 py-1 text-sm text-muted hover:text-fg">
+                            Cancel
+                          </button>
+                        )}
+                        <button disabled={busy || !decision.trim()} className="rounded-lg bg-accent px-3 py-1 text-sm font-medium text-white disabled:opacity-50">
+                          ⚖ {d.done ? "Save decision" : "Save decision & close task"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button type="button" onClick={() => setChangingDecision(true)} className="rounded-lg border border-line px-3 py-1 text-sm hover:bg-surface-2">
+                      ⚖ Change decision
+                    </button>
+                  )}
+                </section>
+              );
+            })()}
+
             <section className="space-y-2">
               <p className="text-sm font-medium">💬 Comments</p>
               <ul className="space-y-2">
                 {d.comments.map((c) => (
-                  <li key={c.id} className={`rounded-lg px-3 py-2 text-sm ${c.mine ? "bg-accent/10" : "bg-surface-2"}`}>
+                  <li
+                    key={c.id}
+                    className={`rounded-lg px-3 py-2 text-sm ${c.body.startsWith(DECISION_PREFIX) ? "border border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40" : c.mine ? "bg-accent/10" : "bg-surface-2"}`}
+                  >
                     <p className="text-xs text-muted">
                       <b className="text-fg">{c.name}</b> · {when(c.created_at)}
                     </p>
@@ -390,12 +457,29 @@ export function TaskPanel({
                   setComment("");
                   apply({ op: "comment", body });
                 }}
-                className="flex gap-2"
+                className="space-y-1.5"
               >
-                <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment…" maxLength={4000} dir="auto" className={field} />
-                <button disabled={!comment.trim()} className="rounded-lg bg-accent px-3 text-sm font-medium text-white disabled:opacity-50">
-                  Send
-                </button>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter is a new line; Ctrl/⌘ + Enter sends.
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder="Write a comment… (Ctrl + Enter to send)"
+                  maxLength={4000}
+                  rows={3}
+                  dir="auto"
+                  className={`${field} resize-y`}
+                />
+                <div className="flex justify-end">
+                  <button disabled={!comment.trim()} className="rounded-lg bg-accent px-4 py-1 text-sm font-medium text-white disabled:opacity-50">
+                    Send
+                  </button>
+                </div>
               </form>
             </section>
 

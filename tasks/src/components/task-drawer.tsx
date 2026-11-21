@@ -13,6 +13,15 @@ const field = "w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm
  * A task opened from the board or a list: everything about it, saved as you
  * go (title / notes on leaving the box, the rest at once).
  */
+// The ERPs (RMI's task panel) write a task's final decision as a comment with this prefix; Task Hub reads and writes the same.
+const DECISION_PREFIX = "✅ Final decision: ";
+/** The task's final decision: the latest decision comment, else null. */
+function latestDecision(comments: Comment[]) {
+  let last: Comment | null = null;
+  for (const c of comments) if (c.body.startsWith(DECISION_PREFIX) && (!last || c.created_at >= last.created_at)) last = c;
+  return last;
+}
+
 export function TaskDrawer({
   taskId,
   buckets,
@@ -33,6 +42,8 @@ export function TaskDrawer({
   const [moves, setMoves] = useState<{ id: string; old_due: string; new_due: string | null; reason: string; changed_by: string | null; created_at: string }[]>([]);
   const [newCheck, setNewCheck] = useState("");
   const [newComment, setNewComment] = useState("");
+  const [decision, setDecision] = useState("");
+  const [changingDecision, setChangingDecision] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -137,6 +148,20 @@ export function TaskDrawer({
     if (error) return setError(error.message);
     setNewComment("");
     await load();
+  }
+
+  /** The final decision is a comment starting with DECISION_PREFIX (the same as the ERPs'); saving one closes the task. */
+  async function saveDecision(e: React.FormEvent) {
+    e.preventDefault();
+    const text = decision.trim();
+    if (!task || !text) return;
+    const { error } = await supabase().from("comments").insert({ task_id: task.id, body: DECISION_PREFIX + text });
+    if (error) return setError(error.message);
+    setDecision("");
+    setChangingDecision(false);
+    if (!task.done) await save({ done: true });
+    await load();
+    onChanged();
   }
 
   async function remove() {
@@ -339,13 +364,63 @@ export function TaskDrawer({
               })()}
             />
 
+            {(() => {
+              const current = latestDecision(comments);
+              const open = !current || changingDecision;
+              return (
+                <div className="space-y-2 rounded-xl border border-line p-3">
+                  <p className="text-sm font-medium">⚖ Final decision</p>
+                  {current && (
+                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/40">
+                      <p className="whitespace-pre-wrap text-sm font-medium" dir="auto">
+                        {current.body.slice(DECISION_PREFIX.length).trim()}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {people.get(current.user_id)?.full_name ?? "Someone"} · {dmyTime(current.created_at)}
+                      </p>
+                    </div>
+                  )}
+                  {open ? (
+                    <form onSubmit={saveDecision} className="space-y-1.5">
+                      <textarea
+                        aria-label="Final decision"
+                        value={decision}
+                        onChange={(e) => setDecision(e.target.value)}
+                        placeholder="Write the final decision taken on this task…"
+                        dir="auto"
+                        rows={3}
+                        maxLength={3900}
+                        className={field}
+                      />
+                      <div className="flex justify-end gap-2">
+                        {current && (
+                          <button type="button" onClick={() => setChangingDecision(false)} className="rounded-xl px-3 py-1.5 text-sm text-muted hover:text-fg">
+                            Cancel
+                          </button>
+                        )}
+                        <button disabled={!decision.trim()} className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60">
+                          ⚖ {task.done ? "Save decision" : "Save decision & close task"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button type="button" onClick={() => setChangingDecision(true)} className="rounded-xl border border-line px-3 py-1.5 text-sm hover:bg-surface-2">
+                      ⚖ Change decision
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
             <div className="space-y-2">
               <p className="text-sm font-medium">💬 Comments</p>
               <ul className="space-y-2">
                 {comments.map((c) => (
                   <li key={c.id} className="flex gap-2">
                     <Avatar person={people.get(c.user_id)} />
-                    <div className="min-w-0 flex-1 rounded-xl bg-surface-2 px-3 py-2">
+                    <div
+                      className={`min-w-0 flex-1 rounded-xl px-3 py-2 ${c.body.startsWith(DECISION_PREFIX) ? "border border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40" : "bg-surface-2"}`}
+                    >
                       <p className="text-xs">
                         <b>{people.get(c.user_id)?.full_name ?? "Someone"}</b> <span className="text-muted">· {ago(c.created_at)}</span>
                       </p>
@@ -356,11 +431,27 @@ export function TaskDrawer({
                   </li>
                 ))}
               </ul>
-              <form onSubmit={addComment} className="flex gap-2">
-                <input value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Write a comment…" dir="auto" className={field} />
-                <button disabled={!newComment.trim()} className="rounded-xl bg-accent px-3 text-sm font-medium text-white disabled:opacity-60">
-                  Send
-                </button>
+              <form onSubmit={addComment} className="space-y-1.5">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter is a new line; Ctrl/⌘ + Enter sends.
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder="Write a comment… (Ctrl + Enter to send)"
+                  rows={3}
+                  dir="auto"
+                  className={`${field} resize-y`}
+                />
+                <div className="flex justify-end">
+                  <button disabled={!newComment.trim()} className="rounded-xl bg-accent px-4 py-1.5 text-sm font-medium text-white disabled:opacity-60">
+                    Send
+                  </button>
+                </div>
               </form>
             </div>
             {error && <p className="text-sm text-danger">{error}</p>}
