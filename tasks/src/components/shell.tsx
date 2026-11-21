@@ -15,6 +15,23 @@ export function Shell({ userId, children }: { userId: string; children: React.Re
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // Wide screens: the sidebar can be hidden for more room (remembered in this browser).
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    try {
+      setHidden(localStorage.getItem("tasks.sidebar") === "hidden");
+    } catch {}
+  }, []);
+  function menu() {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      setHidden((h) => {
+        try {
+          localStorage.setItem("tasks.sidebar", h ? "shown" : "hidden");
+        } catch {}
+        return !h;
+      });
+    } else setOpen(true);
+  }
   const [lateCount, setLateCount] = useState(0);
 
   // How many of the tasks I can see are past their due date.
@@ -101,13 +118,19 @@ export function Shell({ userId, children }: { userId: string; children: React.Re
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-line bg-surface transition-transform lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${hidden ? "lg:hidden" : ""}`}
       >
         {sidebar}
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-bg/80 px-3 py-2 backdrop-blur sm:px-5">
-          <button type="button" onClick={() => setOpen(true)} aria-label="Menu" className="grid size-9 place-items-center rounded-full border border-line bg-surface lg:hidden">
+          <button
+            type="button"
+            onClick={menu}
+            aria-label={hidden ? "Show the sidebar" : "Menu / hide the sidebar"}
+            title={hidden ? "Show the sidebar" : "Hide the sidebar"}
+            className="grid size-9 place-items-center rounded-full border border-line bg-surface hover:bg-surface-2"
+          >
             ☰
           </button>
           <div className="flex-1" />
